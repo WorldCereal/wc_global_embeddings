@@ -1373,7 +1373,7 @@ function renderGroup(cid, layers) {
     const sc = {ok:'sok',load:'sload',err:'serr'}[l.status]||'sload';
     const sp = l.status==='load'?'<span class="spin"></span>':'';
     const pill = l.isRef?'pemb':l.type==='mosaic'?'prgb':l.type==='display'?'prgb':l.type==='embed'?'pemb':'pcust';
-    const ptxt = l.isRef?'REF':l.type==='mosaic'?(l.style?.kind==='rgb'?'PCA':'MAP'):l.type==='display'?'RGB':l.type==='embed'?'128B':'CUST';
+    const ptxt = l.isRef?'REF':l.type==='mosaic'?(l.style?.kind==='rgb'?(l.style.tag||'PCA'):'MAP'):l.type==='display'?'RGB':l.type==='embed'?'128B':'CUST';
     const da   = l.status!=='ok'?'disabled':'';
     const op   = Math.round(l.opacity*100);
     const bi   = l.bandIndices1||[1,2,3];
@@ -1825,7 +1825,7 @@ async function readMosaicPixel(layer, lat, lng) {
     const ras = await p.images[0].img.readRasters({ window: [c, r, c+1, r+1], samples, interleave: false });
     const v = samples.map((_, i) => ras[i][0]);
     let txt;
-    if (st.kind === 'rgb') txt = v.every(x => x === 255) ? 'nodata' : v.map((x,i) => `<b>PC${i+1}:</b> ${x}`).join('&nbsp;&nbsp;');
+    if (st.kind === 'rgb') txt = v.every(x => x === 255) ? 'nodata' : v.map((x,i) => `<b>${st.chan ? st.chan[i] : 'PC' + (i+1)}:</b> ${x}`).join('&nbsp;&nbsp;');
     else if (st.kind === 'classes') { const row = (st.rows || []).find(rw => rw.value === v[0]); txt = `<b>${esc(row ? row.name.replace(/_/g,' ') : (v[0] === 255 ? 'nodata' : String(v[0])))}</b> (${v[0]})`; }
     else txt = v[0] <= 100 ? `<b>${v[0]} %</b>` : (v[0] === 254 ? 'not cropland' : 'nodata');
     return `<div class="pxblk"><div class="pxlbl">${esc(layer.name)} <span style="color:#445;font-size:10px">(${p.s2}, full-res)</span></div>
@@ -1867,8 +1867,22 @@ async function initDemo() {
     const pca = mkMosaic('Embeddings PCA (one model for all tiles)', pcaParts, { kind: 'rgb' });
     pca.autoZoom = true;
     S.layers.push(pca);
+    // OIF RGB: the 3 real embedding bands that best separate land cover (tools/build_oif.py);
+    // listed above the PCA and switched off at start: tick it to compare.
+    const oifParts = cat.tiles.filter(t => t.oif).map(t => ({ s2: t.s2_tile, url: demoUrl(t.oif), bbox: t.bbox }));
+    let oif = null;
+    if (oifParts.length) {
+      let bands = [];
+      try { bands = (await (await fetch(demoUrl('oif_model.json'))).json()).bands_1based || []; } catch(e) {}
+      const nm = bands.length === 3 ? ` (bands ${bands.join(' / ')})` : '';
+      oif = mkMosaic(`Embeddings OIF RGB${nm}`, oifParts,
+                     { kind: 'rgb', tag: 'OIF', chan: bands.length === 3 ? bands.map(b => `A${b}`) : ['R','G','B'] });
+      oif.visible = false;
+      S.layers.unshift(oif);
+    }
     renderLists();
     await loadCOG(pca.id);
+    if (oif) loadCOG(oif.id);
   } else if (cat.tiles.length) {
     S.map.fitBounds(L.latLngBounds(cat.tiles.map(t => [[t.bbox[1], t.bbox[0]], [t.bbox[3], t.bbox[2]]]).flat()));
   }
