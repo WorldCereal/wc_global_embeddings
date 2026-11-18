@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldCereal Embeddings: Float32 Explorer</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.9.0/dist/proj4.js"></script>
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:#10111a;color:#d4d8e8;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+
+/* ── Header ────────────────────────────────────────────── */
+#hdr{background:#181a2a;border-bottom:1px solid #252840;
+  padding:10px 18px;display:flex;align-items:center;gap:12px;flex-shrink:0;z-index:1100;}
+#hdr h1{font-size:16px;font-weight:700;color:#30e0cc;white-space:nowrap;}
+#hdr .sub{font-size:13px;color:#7a86a0;}
+.wc-logo-link{display:flex;align-items:center;flex-shrink:0;}
+.wc-logo{height:30px;width:auto;}
+.hdr-nav{display:flex;gap:6px;flex-shrink:0;margin-left:auto;}
+.nav-pill{font-size:13px;font-weight:600;padding:5px 14px;border-radius:4px;
+  border:1px solid #252840;color:#8892aa;background:#1e2136;
+  text-decoration:none;cursor:pointer;white-space:nowrap;transition:all .15s;}
+.nav-pill:hover{border-color:#3a7bd5;color:#7eb8f7;}
+.nav-pill.active{background:#0d2a28;border-color:#30e0cc;color:#30e0cc;cursor:default;}
+
+/* ── Layout ─────────────────────────────────────────────── */
+#main{display:flex;flex:1;overflow:hidden;}
+#sb{width:300px;min-width:200px;max-width:520px;background:#181a2a;
+  display:flex;flex-direction:column;overflow:hidden;z-index:1050;flex-shrink:0;}
+#sb-handle{width:5px;flex-shrink:0;cursor:col-resize;z-index:1060;
+  background:#1a1c2e;border-right:1px solid #252840;transition:background .15s;}
+#sb-handle:hover,#sb-handle.dragging{background:#30e0cc;}
+#sb-scroll{flex:1;overflow-y:auto;padding:10px 10px 20px;}
+#sb-scroll::-webkit-scrollbar{width:5px;}
+#sb-scroll::-webkit-scrollbar-thumb{background:#2d3155;border-radius:3px;}
+
+#mapc{flex:1;position:relative;overflow:hidden;}
+#map{width:100%;height:100%;}
+
+#rp-handle{width:5px;flex-shrink:0;cursor:col-resize;z-index:1060;
+  background:#1a1c2e;border-left:1px solid #252840;transition:background .15s;}
+#rp-handle:hover,#rp-handle.dragging{background:#30e0cc;}
+#rp{width:300px;min-width:200px;max-width:560px;background:#181a2a;
+  display:flex;flex-direction:column;overflow:hidden;z-index:1050;flex-shrink:0;
+  border-left:1px solid #1e2036;}
+#rp-scroll{flex:1;overflow-y:auto;padding:10px 10px 20px;}
+#rp-scroll::-webkit-scrollbar{width:5px;}
+#rp-scroll::-webkit-scrollbar-thumb{background:#2d3155;border-radius:3px;}
+
+/* ── Section ─────────────────────────────────────────────── */
+.sec{margin-bottom:14px;}
+.sec-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+  color:#8892aa;padding:4px 0 6px;border-bottom:1px solid #222438;margin-bottom:8px;
+  display:flex;align-items:center;justify-content:space-between;}
+.step-label{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;
+  color:#30e0cc;background:#0d1f1e;border:1px solid #1a3a38;
+  padding:5px 10px;border-radius:4px;margin-bottom:10px;margin-top:4px;}
+.sbadge{font-size:10px;font-weight:600;padding:1px 7px;border-radius:8px;text-transform:none;letter-spacing:0;}
+.bok{background:#1b3320;color:#4a6;}
+.bwarn{background:#332210;color:#c8922a;}
+.berr{background:#3a1010;color:#c0392b;}
+
+/* ── Layer cards ─────────────────────────────────────────── */
+.lcard{background:#1e2136;border:1px solid #272b47;border-radius:6px;
+  padding:8px 10px;margin-bottom:7px;}
+.lcard.vis-u8{border-left:3px solid #3a7bd5;}
+.lcard.vis-sc{border-left:3px solid #30e0cc;}
+.lcard.vis-f32{border-left:3px solid #c8922a;}
+.lrow{display:flex;align-items:center;gap:7px;}
+.lchk{width:15px;height:15px;cursor:pointer;flex-shrink:0;}
+.lchk-u8{accent-color:#3a7bd5;}
+.lchk-sc{accent-color:#30e0cc;}
+.lchk-f32{accent-color:#c8922a;}
+.lname{flex:1;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lpill{font-size:9px;font-weight:700;text-transform:uppercase;padding:2px 5px;border-radius:3px;flex-shrink:0;}
+.p-u8{background:#1a3a5c;color:#7eb8f7;}
+.p-sc{background:#0d2a28;color:#30e0cc;}
+.p-f32{background:#2a1800;color:#c8922a;}
+.loprow{display:flex;align-items:center;gap:6px;margin-top:6px;}
+.loprow label{font-size:10px;color:#7a86a0;flex-shrink:0;}
+.loprow input[type=range]{flex:1;height:6px;cursor:pointer;border-radius:3px;}
+.loprow span{font-size:10px;color:#8892aa;width:28px;text-align:right;}
+.lstat{font-size:10px;margin-top:5px;padding:3px 6px;border-radius:3px;background:#13151f;}
+.sok{color:#4a6;} .sload{color:#c8922a;} .serr{color:#c0392b;}
+.brow{display:flex;align-items:center;gap:5px;margin-top:7px;padding-top:7px;border-top:1px solid #222438;}
+.brow label{font-size:10px;color:#7a86a0;flex-shrink:0;}
+.binp{width:44px;background:#13151f;border:1px solid #2d3155;
+  color:#d4d8e8;padding:3px 5px;border-radius:3px;font-size:11px;text-align:center;}
+.binp:focus{outline:none;border-color:#30e0cc;}
+.bxs{flex:1;background:#1e2136;border:1px solid #2d3155;color:#7eb8f7;
+  padding:3px 7px;border-radius:3px;cursor:pointer;font-size:10px;white-space:nowrap;}
+.bxs:hover{background:#252840;border-color:#3a7bd5;}
+.bxs:disabled{opacity:.45;cursor:not-allowed;}
+
+/* ── Float32 compute button ──────────────────────────────── */
+.f32-btn{width:100%;margin-top:8px;padding:6px 0;border-radius:4px;cursor:pointer;
+  font-size:11px;font-weight:700;border:1px solid #c8922a;
+  background:#2a1800;color:#f0b030;transition:all .15s;}
+.f32-btn:hover{background:#3a2200;border-color:#f0b030;color:#ffd060;}
+.f32-btn.active{background:#f0b030;border-color:#f0b030;color:#1a1200;
+  box-shadow:0 0 10px rgba(240,176,48,.4);}
+.f32-btn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* ── Palette selector ────────────────────────────────────── */
+.palrow{display:flex;align-items:center;gap:6px;margin-top:6px;}
+.palrow label{font-size:10px;color:#7a86a0;flex-shrink:0;}
+.palsel{flex:1;background:#13151f;border:1px solid #2d3155;color:#d4d8e8;
+  padding:3px 6px;border-radius:3px;font-size:10px;}
+.palsel:focus{outline:none;border-color:#30e0cc;}
+
+/* ── STAC list ───────────────────────────────────────────── */
+.stacbar{display:flex;gap:6px;margin-bottom:8px;}
+.stfil{flex:1;background:#1e2136;border:1px solid #272b47;
+  color:#d4d8e8;padding:5px 8px;border-radius:4px;font-size:11px;}
+.stfil:focus{outline:none;border-color:#30e0cc;}
+.bsm{background:#1e2136;border:1px solid #30e0cc;color:#30e0cc;
+  padding:5px 10px;border-radius:4px;cursor:pointer;font-size:11px;white-space:nowrap;flex-shrink:0;}
+.bsm:hover{background:#0d2a28;}
+.bsm:disabled{opacity:.5;cursor:not-allowed;}
+.stlist{max-height:220px;overflow-y:auto;}
+.stlist::-webkit-scrollbar{width:4px;}
+.stlist::-webkit-scrollbar-thumb{background:#2d3155;}
+.sti{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:4px;
+  cursor:pointer;border:1px solid transparent;margin-bottom:3px;transition:background .1s;}
+.sti:hover{background:#1e2136;border-color:#272b47;}
+.sti.loaded{border-left:3px solid #30e0cc;background:#0d1f1e;}
+.stiname{flex:1;font-size:11px;}
+
+/* ── CORS warning ────────────────────────────────────────── */
+#cwarn{background:#2a1800;border:1px solid #c8922a;border-radius:5px;
+  padding:8px 10px;font-size:10px;color:#c8922a;margin-bottom:10px;display:none;line-height:1.6;}
+#cwarn a{color:#f0b84a;}
+#cwarn code{background:#3a2500;padding:1px 4px;border-radius:3px;font-size:10px;}
+
+/* ── Right panel: pixel inspector ───────────────────────── */
+.rp-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+  color:#8892aa;padding:4px 0 6px;border-bottom:1px solid #222438;margin-bottom:8px;}
+.rp-hint{font-size:11px;color:#6a7490;text-align:center;padding:20px 0;}
+.px-header{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;}
+.px-col-hdr{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+  padding:4px 7px;border-radius:3px;text-align:center;}
+.px-col-hdr.u8{background:#1a3a5c;color:#7eb8f7;}
+.px-col-hdr.f32{background:#2a1800;color:#f0b030;}
+.px-rows{display:grid;grid-template-columns:1fr 1fr;gap:4px 6px;}
+.px-row-label{font-size:9px;color:#7a86a0;text-align:right;padding-right:4px;
+  grid-column:1/-1;display:flex;gap:4px;align-items:center;
+  border-top:1px solid #1e2036;padding-top:3px;margin-top:2px;}
+.px-row-label span{font-size:9px;font-weight:700;color:#556;width:30px;}
+.px-val{font-size:10px;padding:2px 5px;border-radius:2px;font-family:monospace;}
+.px-val.u8{background:#13151f;color:#7eb8f7;}
+.px-val.f32{background:#1a1000;color:#f0b030;}
+.px-val.nd{color:#445;font-style:italic;}
+.px-band-grid{display:grid;grid-template-columns:auto 1fr 1fr;gap:2px 4px;font-size:10px;}
+.px-band-grid .bnum{color:#556;font-size:9px;text-align:right;padding-right:3px;font-weight:600;}
+.px-band-grid .bv-u8{color:#7eb8f7;font-family:monospace;background:#13151f;
+  padding:1px 4px;border-radius:2px;}
+.px-band-grid .bv-f32{color:#f0b030;font-family:monospace;background:#1a1000;
+  padding:1px 4px;border-radius:2px;}
+.px-coord{font-size:10px;color:#7a86a0;margin-bottom:6px;}
+.px-note{font-size:10px;color:#6a7490;margin-bottom:6px;font-style:italic;}
+.px-scale-box{background:#0e1a1f;border:1px solid #1e3a3a;border-radius:6px;
+  padding:8px 10px;margin-bottom:10px;}
+.px-scale-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+  color:#3a6a6a;margin-bottom:5px;}
+.px-scale-val{font-size:18px;font-weight:700;font-family:monospace;
+  letter-spacing:.5px;line-height:1.2;margin-bottom:4px;}
+.px-scale-formula{font-size:11px;color:#7a9090;line-height:1.5;}
+.px-scale-warn{font-size:10px;color:#b05030;margin-top:4px;font-style:italic;}
+
+/* ── Floating scale panel ────────────────────────────────── */
+#scale-float {
+  position:absolute; bottom:28px; left:50%; transform:translateX(-50%);
+  background:rgba(13,26,24,.97); border:1px solid #1a3a38; border-radius:8px;
+  z-index:1300; display:none; min-width:260px;
+  box-shadow:0 6px 28px rgba(0,0,0,.55); backdrop-filter:blur(10px);
+  user-select:none;
+}
+#scale-float-head {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 11px 6px; border-bottom:1px solid #1a3a38;
+  cursor:move;
+}
+#scale-float-title {
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.7px;
+  color:#30e0cc; flex:1;
+}
+#scale-float-close {
+  background:none; border:none; color:#445; cursor:pointer; font-size:15px;
+  line-height:1; padding:0 2px; flex-shrink:0;
+}
+#scale-float-close:hover { color:#c0392b; }
+#scale-float-body { padding:9px 12px 10px; }
+#scale-float-val {
+  font-size:22px; font-weight:700; font-family:monospace; color:#30e0cc;
+  letter-spacing:-.5px; line-height:1.1;
+}
+#scale-float-lbl { font-size:10px; color:#7a86a0; margin-bottom:4px; }
+#scale-float-formula { font-size:11px; color:#9aa0b8; margin-top:5px; line-height:1.5; }
+#scale-float-warn { font-size:10px; color:#c8922a; margin-top:4px; }
+#scale-float-coord { font-size:10px; color:#556; margin-top:5px; }
+
+/* ── Spinner ─────────────────────────────────────────────── */
+.spin{display:inline-block;width:11px;height:11px;border:2px solid #2d3155;
+  border-top-color:#30e0cc;border-radius:50%;animation:sp .8s linear infinite;vertical-align:middle;margin-right:4px;}
+@keyframes sp{to{transform:rotate(360deg);}}
+
+/* ── Status bar ──────────────────────────────────────────── */
+#statusbar{background:#13151f;border-top:1px solid #1e2036;padding:4px 14px;
+  font-size:10px;color:#7a86a0;flex-shrink:0;}
+
+/* ── Empty state ─────────────────────────────────────────── */
+.empty{font-size:11px;color:#6a7490;text-align:center;padding:10px 0;}
+
+/* ── Leaflet overrides ───────────────────────────────────── */
+.leaflet-control-layers{background:#181a2a !important;border-color:#252840 !important;}
+.leaflet-control-zoom a{background:#181a2a !important;color:#30e0cc !important;border-color:#252840 !important;}
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────── -->
+<div id="hdr">
+  <a class="wc-logo-link" href="index.html">
+    <img class="wc-logo" src="worldcereal_logo.jpg" alt="WorldCereal" onerror="this.style.display='none'">
+  </a>
+  <div>
+    <h1>Float32 Explorer</h1>
+    <div class="sub">WorldCereal Embeddings · Dequantization &amp; Inspection</div>
+  </div>
+  <div class="hdr-nav">
+    <a class="nav-pill" href="index.html">COG Viewer</a>
+    <a class="nav-pill active" href="float.html">Float32</a>
+    <a class="nav-pill" href="classify.html">Classify</a>
+  </div>
+</div>
+
+<!-- ── Main ────────────────────────────────────────────── -->
+<div id="main">
+
+  <!-- Left sidebar -->
+  <div id="sb">
+    <div id="sb-scroll">
+
+      <!-- CORS warning -->
+      <div id="cwarn">
+        ⚠ <strong>CORS / network error.</strong> The S3 bucket needs:<br>
+        <code>AllowedOrigins: ["*"]</code> &nbsp;
+        <code>AllowedMethods: ["GET","HEAD"]</code><br>
+        <a href="https://docs.cloudferro.com/en/latest/s3/s3-cors.html" target="_blank">Cloudferro CORS setup ↗</a>
+      </div>
+
+      <!-- Step 1: Select tile -->
+      <div class="sec">
+        <div class="step-label">Step 1 · Select Tile</div>
+        <div class="sec-title">
+          STAC Catalog: embeddings
+          <span class="sbadge bok" id="stac-badge">—</span>
+        </div>
+        <div class="stacbar">
+          <input class="stfil" id="stfil" placeholder="Filter tiles…" oninput="filterSTAC()">
+          <button class="bsm" id="stbtn" onclick="fetchSTAC()">Load</button>
+        </div>
+        <div class="stlist" id="stlist">
+          <div class="empty">Click Load to browse tiles</div>
+        </div>
+      </div>
+
+      <!-- Step 2: Layers (hidden until tile loaded) -->
+      <div id="layers-section" style="display:none">
+        <div class="step-label">Step 2 · Layers</div>
+
+        <!-- uint8 Embedding -->
+        <div class="sec">
+          <div class="sec-title">uint8 Embedding</div>
+          <div class="lcard" id="u8-card">
+            <div class="lrow">
+              <input type="checkbox" class="lchk lchk-u8" id="u8-vis" checked onchange="toggleVis('u8')">
+              <span class="lname" id="u8-name">—</span>
+              <span class="lpill p-u8">uint8</span>
+            </div>
+            <div class="loprow">
+              <label>Opacity</label>
+              <input type="range" id="u8-opacity" min="0" max="1" step="0.05" value="1"
+                oninput="setOpacity('u8',this.value);document.getElementById('u8-ov').textContent=Math.round(this.value*100)+'%'">
+              <span id="u8-ov">100%</span>
+            </div>
+            <div class="brow">
+              <label>R</label><input class="binp" id="u8-br" type="number" min="1" max="128" value="53">
+              <label>G</label><input class="binp" id="u8-bg" type="number" min="1" max="128" value="67">
+              <label>B</label><input class="binp" id="u8-bb" type="number" min="1" max="128" value="75">
+              <button class="bxs" onclick="reloadBands('u8')" style="flex:0;padding:3px 9px">Apply</button>
+            </div>
+            <div class="lstat" id="u8-stat"><span class="sload"><span class="spin"></span>Waiting…</span></div>
+          </div>
+        </div>
+
+        <!-- Scales -->
+        <div class="sec">
+          <div class="sec-title">Scale Map <span style="color:#30e0cc;font-size:10px">(per-pixel quantization scale)</span></div>
+          <div class="lcard" id="sc-card">
+            <div class="lrow">
+              <input type="checkbox" class="lchk lchk-sc" id="sc-vis" checked onchange="toggleVis('sc')">
+              <span class="lname" id="sc-name">—</span>
+              <span class="lpill p-sc">float32</span>
+            </div>
+            <div class="loprow">
+              <label>Opacity</label>
+              <input type="range" id="sc-opacity" min="0" max="1" step="0.05" value="0.7"
+                oninput="setOpacity('sc',this.value);document.getElementById('sc-ov').textContent=Math.round(this.value*100)+'%'">
+              <span id="sc-ov">70%</span>
+            </div>
+            <div class="palrow">
+              <label>Palette</label>
+              <select class="palsel" id="sc-palette" onchange="scheduleRefresh()">
+                <option value="viridis" selected>Viridis</option>
+                <option value="plasma">Plasma</option>
+                <option value="magma">Magma</option>
+                <option value="inferno">Inferno</option>
+                <option value="turbo">Turbo</option>
+                <option value="gray">Grayscale</option>
+              </select>
+            </div>
+            <div class="lstat" id="sc-stat"><span class="sload"><span class="spin"></span>Waiting…</span></div>
+          </div>
+        </div>
+
+        <!-- Float32 computed -->
+        <div class="sec">
+          <div class="sec-title">Float32 (Computed) <span style="color:#c8922a;font-size:10px">uint8−128 × scale</span></div>
+          <div class="lcard" id="f32-card">
+            <div class="lrow">
+              <input type="checkbox" class="lchk lchk-f32" id="f32-vis" checked onchange="toggleVis('f32')">
+              <span class="lname">Float32 Embeddings</span>
+              <span class="lpill p-f32">computed</span>
+            </div>
+            <div class="loprow">
+              <label>Opacity</label>
+              <input type="range" id="f32-opacity" min="0" max="1" step="0.05" value="1"
+                oninput="setOpacity('f32',this.value);document.getElementById('f32-ov').textContent=Math.round(this.value*100)+'%'">
+              <span id="f32-ov">100%</span>
+            </div>
+            <div class="brow">
+              <label>R</label><input class="binp" id="f32-br" type="number" min="1" max="128" value="53">
+              <label>G</label><input class="binp" id="f32-bg" type="number" min="1" max="128" value="67">
+              <label>B</label><input class="binp" id="f32-bb" type="number" min="1" max="128" value="75">
+            </div>
+            <button class="f32-btn" id="f32-btn" onclick="toggleFloat32()" disabled>
+              ⚡ Retrieve Float32 Embeddings
+            </button>
+            <div class="lstat" id="f32-stat"><span style="color:#556">Enable after both layers are loaded</span></div>
+          </div>
+        </div>
+      </div><!-- /layers-section -->
+
+    </div><!-- /sb-scroll -->
+  </div><!-- /sb -->
+
+  <div id="sb-handle"></div>
+
+  <!-- Map -->
+  <div id="mapc">
+    <div id="map"></div>
+
+    <!-- Floating scale panel -->
+    <div id="scale-float">
+      <div id="scale-float-head">
+        <span id="scale-float-title">Quantization Scale</span>
+        <button id="scale-float-close" onclick="document.getElementById('scale-float').style.display='none'">✕</button>
+      </div>
+      <div id="scale-float-body">
+        <div id="scale-float-lbl">scale value</div>
+        <div id="scale-float-val">—</div>
+        <div id="scale-float-formula"></div>
+        <div id="scale-float-warn" style="display:none"></div>
+        <div id="scale-float-coord"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="rp-handle"></div>
+
+  <!-- Right panel: Pixel Inspector -->
+  <div id="rp">
+    <div id="rp-scroll">
+      <div class="rp-title">Pixel Inspector</div>
+      <div id="rp-content">
+        <div class="rp-hint">Click anywhere on the map to inspect uint8 and float32 values for all 128 bands.</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<div id="statusbar">Ready · Select a tile from the STAC catalog to begin</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════
+const CFG = {
+  S3:           'https://s3.waw4-1.cloudferro.com',
+  BUCKET:       'worldcereal-uk-waw4-1-o2q1qptnzbki8vavzriorqk0498vwc6tqvxlzvnw5',
+  POSTPROC:     'worldcereal_uk_production_embeddings_postprocessed',
+  SCALE_POSTPROC:'worldcereal_uk_production_embeddings_scale_postprocessed',
+  STAC_BASE:    'https://stac.openeo.vito.be',
+  STAC_COL:     'presto-embeddings-uk',
+  EMB_BANDS:    [53, 67, 75],
+  DEMO_BASE:    (new URLSearchParams(location.search).get('data') || 'https://s3.waw4-1.cloudferro.com/worldcereal-uk-waw4-1-o2q1qptnzbki8vavzriorqk0498vwc6tqvxlzvnw5/worldcereal_embeddings_demo').replace(/\/$/, ''),
+  STRETCH_LO:   1,
+  STRETCH_HI:   99,
+  THUMB_W:      512,
+  REFRESH_DELAY:400,
+  PROJ: {
+    3035:'+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+    3857:'+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +no_defs',
+    4326:'+proj=longlat +datum=WGS84 +no_defs',
+    32628:'+proj=utm +zone=28 +datum=WGS84 +units=m +no_defs',
+    32629:'+proj=utm +zone=29 +datum=WGS84 +units=m +no_defs',
+    32630:'+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs',
+    32631:'+proj=utm +zone=31 +datum=WGS84 +units=m +no_defs',
+    32632:'+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs',
+    32633:'+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs',
+    32634:'+proj=utm +zone=34 +datum=WGS84 +units=m +no_defs',
+    32636:'+proj=utm +zone=36 +datum=WGS84 +units=m +no_defs',
+  },
+  // Extra tiles outside the main STAC collection (injected as synthetic items)
+  EXTRA_TILES: [
+    {
+      id: '36NXF_0_1',
+      label: '36NXF_0_1 · Bungoma County (Kenya)',
+      cogUrl: 'https://s3.waw4-1.cloudferro.com/worldcereal-uk-waw4-1-o2q1qptnzbki8vavzriorqk0498vwc6tqvxlzvnw5/worldcereal_bonguma_embeddings_raw/Bonguma_croptype_embeddings_36NXF_0_1_2023-09-19_2024-09-10.tif',
+      scaleUrl: 'https://s3.waw4-1.cloudferro.com/worldcereal-uk-waw4-1-o2q1qptnzbki8vavzriorqk0498vwc6tqvxlzvnw5/worldcereal_bonguma_scales_raw/Bonguma_croptype_embeddings_scale_36NXF_0_1_2023-09-19_2024-09-10.tif',
+    },
+  ],
+};
+
+Object.entries(CFG.PROJ).forEach(([c,d]) => proj4.defs(`EPSG:${c}`,d));
+proj4.defs('WGS84', CFG.PROJ[4326]);
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+const F = {
+  map: null,
+  tileId: null,
+  stacRaw: [],
+  stacItems: [],
+  refreshTimer: null,
+  float32Enabled: false,
+  // Per-layer state objects (null until loaded)
+  u8:  null,  // uint8 COG layer
+  sc:  null,  // scales COG layer
+  f32: null,  // computed float32 Leaflet overlay (no tiff, shares metadata from u8)
+};
+
+// Layer template
+function mkLayerState(type) {
+  return {
+    type,
+    visible: true,
+    opacity: type==='sc' ? 0.7 : 1.0,
+    tiff: null, images: null,
+    projDef: null, epsg: null,
+    origin: null, res: null,
+    fullW: 0, fullH: 0, nodata: null,
+    fullBounds: null,
+    leafletLayer: null,
+    stretches: null,
+    currentRasters: null,
+    currentWindow: null,
+    currentOutW: 0, currentOutH: 0,
+    status: 'idle', statusMsg: 'Not loaded',
+    bands: [...CFG.EMB_BANDS],
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+// PROJECTION HELPERS  (identical to index.html)
+// ═══════════════════════════════════════════════════════════
+function getEPSG(image) {
+  const gk = image.geoKeys || {};
+  return gk.ProjectedCSTypeGeoKey || gk.GeographicTypeGeoKey || 4326;
+}
+function getProjDef(epsg) {
+  const key = `EPSG:${epsg}`;
+  return proj4.defs(key) ? key : (console.warn(`Unknown EPSG:${epsg}, using LAEA 3035`), 'EPSG:3035');
+}
+function toWGS84(projDef, x, y) {
+  if (projDef==='EPSG:4326'||projDef==='WGS84') return {lat:y,lng:x};
+  const [lng,lat] = proj4(projDef,'WGS84',[x,y]);
+  return {lat,lng};
+}
+function fromWGS84(projDef, lat, lng) {
+  if (projDef==='EPSG:4326'||projDef==='WGS84') return {x:lng,y:lat};
+  const [x,y] = proj4('WGS84',projDef,[lng,lat]);
+  return {x,y};
+}
+function nativeRectToWGS84Bounds(projDef, minX, minY, maxX, maxY) {
+  const N=12;
+  let minLat=Infinity,maxLat=-Infinity,minLng=Infinity,maxLng=-Infinity;
+  for (let i=0;i<=N;i++) {
+    const t=i/N;
+    const mx=minX+t*(maxX-minX), my=minY+t*(maxY-minY);
+    for (const [x,y] of [[mx,minY],[mx,maxY],[minX,my],[maxX,my]]) {
+      const p=toWGS84(projDef,x,y);
+      if(p.lat<minLat)minLat=p.lat; if(p.lat>maxLat)maxLat=p.lat;
+      if(p.lng<minLng)minLng=p.lng; if(p.lng>maxLng)maxLng=p.lng;
+    }
+  }
+  return L.latLngBounds([minLat,minLng],[maxLat,maxLng]);
+}
+function computeWGS84Extent(origin,res,w,h,projDef) {
+  const [ox,oy]=origin,[rx,ry]=res;
+  const x1=ox+w*rx, y1=oy+h*ry;
+  return nativeRectToWGS84Bounds(projDef,Math.min(ox,x1),Math.min(oy,y1),Math.max(ox,x1),Math.max(oy,y1));
+}
+
+// ═══════════════════════════════════════════════════════════
+// OVERVIEW SELECTION
+// ═══════════════════════════════════════════════════════════
+async function buildImageList(tiff) {
+  const count = await tiff.getImageCount();
+  const list = [];
+  for (let i=0;i<count;i++) {
+    try { list.push({i, img:await tiff.getImage(i), w:(await tiff.getImage(i)).getWidth()}); }
+    catch(e){break;}
+  }
+  return list.sort((a,b)=>b.w-a.w);
+}
+function pickOverview(images, targetWidth) {
+  const over = images.filter(x=>x.w>=targetWidth);
+  return over.length ? over[over.length-1].img : images[0].img;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PERCENTILE STRETCH
+// ═══════════════════════════════════════════════════════════
+function computePercentile(arr, pLo, pHi, nodata) {
+  const step = Math.max(1, Math.floor(arr.length/100000));
+  const vals = [];
+  for (let i=0;i<arr.length;i+=step) {
+    const v=arr[i];
+    if (!isFinite(v)||isNaN(v)||v===0) continue;
+    if (nodata!=null&&v===nodata) continue;
+    vals.push(v);
+  }
+  if (!vals.length) return {min:0,max:1};
+  vals.sort((a,b)=>a-b);
+  const lo=Math.max(0,Math.floor(pLo/100*vals.length));
+  const hi=Math.min(vals.length-1,Math.ceil(pHi/100*vals.length)-1);
+  const mn=vals[lo], mx=vals[hi];
+  return {min:mn, max:mx===mn?mn+1:mx};
+}
+function stretch(v,mn,mx) {
+  if (v==null||isNaN(v)||!isFinite(v)) return null;
+  return Math.max(0,Math.min(255,Math.round((v-mn)/(mx-mn)*255)));
+}
+
+// ═══════════════════════════════════════════════════════════
+// PALETTE  (viridis, plasma, magma, inferno, turbo, gray)
+// ═══════════════════════════════════════════════════════════
+const PAL = {
+  viridis: [[68,1,84],[72,35,116],[64,67,135],[52,94,141],[41,120,142],[32,144,141],
+             [34,168,132],[68,190,112],[121,209,81],[189,222,38],[253,231,37]],
+  plasma:  [[13,8,135],[75,3,161],[125,3,168],[168,28,150],[196,65,120],[218,101,88],
+             [233,137,54],[243,174,17],[240,209,30],[226,237,56],[240,249,33]],
+  magma:   [[0,0,4],[28,15,68],[78,15,110],[120,28,108],[165,46,92],[207,68,70],
+             [238,107,63],[251,155,64],[253,202,108],[254,244,167],[252,253,191]],
+  inferno: [[0,0,4],[31,12,72],[85,15,109],[136,34,105],[186,54,85],[227,89,51],
+             [249,141,9],[252,191,39],[249,237,50],[252,255,164],[252,255,164]],
+  turbo:   [[48,18,59],[80,80,186],[46,167,224],[20,214,166],[99,240,90],
+             [183,248,44],[248,209,31],[245,144,25],[214,74,13],[160,15,9],[122,4,3]],
+  gray:    [[0,0,0],[128,128,128],[255,255,255]],
+};
+function applyPalette(name, t) {
+  const lut = PAL[name] || PAL.viridis;
+  const n = lut.length - 1;
+  const i = Math.min(n-1, Math.floor(t*n));
+  const f = t*n - i;
+  const c0=lut[i], c1=lut[i+1];
+  return [
+    Math.round(c0[0]+(c1[0]-c0[0])*f),
+    Math.round(c0[1]+(c1[1]-c0[1])*f),
+    Math.round(c0[2]+(c1[2]-c0[2])*f),
+  ];
+}
+
+// ═══════════════════════════════════════════════════════════
+// CANVAS RENDERING
+// ═══════════════════════════════════════════════════════════
+function rastersToDataURL_RGB(rR,rG,rB,w,h,sR,sG,sB,nodata) {
+  const canvas=document.createElement('canvas');
+  canvas.width=w; canvas.height=h;
+  const ctx=canvas.getContext('2d');
+  const img=ctx.createImageData(w,h);
+  const d=img.data;
+  for (let i=0;i<w*h;i++) {
+    const vr=rR[i],vg=rG[i],vb=rB[i];
+    if (nodata!=null&&vr===nodata&&vg===nodata&&vb===nodata){d[i*4+3]=0;continue;}
+    if (!isFinite(vr)||!isFinite(vg)||!isFinite(vb)){d[i*4+3]=0;continue;}
+    d[i*4+0]=stretch(vr,sR.min,sR.max)??0;
+    d[i*4+1]=stretch(vg,sG.min,sG.max)??0;
+    d[i*4+2]=stretch(vb,sB.min,sB.max)??0;
+    d[i*4+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  return canvas.toDataURL('image/png');
+}
+
+function rastersToDataURL_Palette(raster,w,h,sMin,sMax,palette) {
+  const canvas=document.createElement('canvas');
+  canvas.width=w; canvas.height=h;
+  const ctx=canvas.getContext('2d');
+  const img=ctx.createImageData(w,h);
+  const d=img.data;
+  const range=sMax-sMin||1;
+  for (let i=0;i<w*h;i++) {
+    const v=raster[i];
+    if (!isFinite(v)){d[i*4+3]=0;continue;}
+    const t=Math.max(0,Math.min(1,(v-sMin)/range));
+    const [r,g,b]=applyPalette(palette,t);
+    d[i*4+0]=r; d[i*4+1]=g; d[i*4+2]=b; d[i*4+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  return canvas.toDataURL('image/png');
+}
+
+// Float32 = (uint8 - 128) * scale  → rendered as RGB
+function rastersToDataURL_Float32(rR,rG,rB,scRaster,w,h,sR,sG,sB,nodata) {
+  const canvas=document.createElement('canvas');
+  canvas.width=w; canvas.height=h;
+  const ctx=canvas.getContext('2d');
+  const img=ctx.createImageData(w,h);
+  const d=img.data;
+  for (let i=0;i<w*h;i++) {
+    const vr=rR[i],vg=rG[i],vb=rB[i];
+    if (nodata!=null&&vr===nodata&&vg===nodata&&vb===nodata){d[i*4+3]=0;continue;}
+    const sc=scRaster[i];
+    if (!isFinite(sc)||sc===0){d[i*4+3]=0;continue;}
+    const fr=(vr-128)*sc, fg=(vg-128)*sc, fb=(vb-128)*sc;
+    d[i*4+0]=stretch(fr,sR.min,sR.max)??0;
+    d[i*4+1]=stretch(fg,sG.min,sG.max)??0;
+    d[i*4+2]=stretch(fb,sB.min,sB.max)??0;
+    d[i*4+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  return canvas.toDataURL('image/png');
+}
+
+// ═══════════════════════════════════════════════════════════
+// MESH WARP  (same algorithm as index.html, parametric render fn)
+// ═══════════════════════════════════════════════════════════
+function meshWarp(rasters, scRaster, rW, rH,
+                  nMinX, nMaxY, nMaxX, nMinY,
+                  projDef, wgs84Bounds, outW, outH,
+                  stretches, nodata, mode, palette) {
+  // mode: 'rgb' | 'palette' | 'float32'
+  const MESH=16, MW=MESH+1;
+  const west=wgs84Bounds.getWest(), east=wgs84Bounds.getEast();
+  const north=wgs84Bounds.getNorth(), south=wgs84Bounds.getSouth();
+  const dLng=east-west, dLat=north-south;
+  const rSpanX=nMaxX-nMinX, rSpanY=nMinY-nMaxY;
+
+  const meshC=new Float32Array(MW*MW), meshR=new Float32Array(MW*MW);
+  for (let mj=0;mj<MW;mj++) {
+    const lat=north-(mj/MESH)*dLat;
+    for (let mi=0;mi<MW;mi++) {
+      const lng=west+(mi/MESH)*dLng;
+      try {
+        const [nx,ny]=proj4('WGS84',projDef,[lng,lat]);
+        meshC[mj*MW+mi]=(nx-nMinX)/rSpanX*rW;
+        meshR[mj*MW+mi]=(ny-nMaxY)/rSpanY*rH;
+      } catch(e){meshC[mj*MW+mi]=-1;meshR[mj*MW+mi]=-1;}
+    }
+  }
+
+  const canvas=document.createElement('canvas');
+  canvas.width=outW; canvas.height=outH;
+  const ctx=canvas.getContext('2d');
+  const imgD=ctx.createImageData(outW,outH);
+  const d=imgD.data;
+
+  for (let py=0;py<outH;py++) {
+    const mj=py/outH*MESH;
+    const mj0=Math.min(Math.floor(mj),MESH-1), mj1=mj0+1;
+    const ty=mj-mj0, omty=1-ty;
+    for (let px=0;px<outW;px++) {
+      const mi=px/outW*MESH;
+      const mi0=Math.min(Math.floor(mi),MESH-1), mi1=mi0+1;
+      const tx=mi-mi0, omtx=1-tx;
+      const i00=mj0*MW+mi0,i01=mj0*MW+mi1,i10=mj1*MW+mi0,i11=mj1*MW+mi1;
+      const col=meshC[i00]*omtx*omty+meshC[i01]*tx*omty+meshC[i10]*omtx*ty+meshC[i11]*tx*ty;
+      const row=meshR[i00]*omtx*omty+meshR[i01]*tx*omty+meshR[i10]*omtx*ty+meshR[i11]*tx*ty;
+      const c=Math.round(col), r=Math.round(row);
+      if (c<0||c>=rW||r<0||r>=rH) continue;
+      const ri=r*rW+c;
+      const oi=(py*outW+px)*4;
+
+      if (mode==='rgb') {
+        const vr=rasters[0][ri],vg=rasters[1][ri],vb=rasters[2][ri];
+        if (nodata!=null&&vr===nodata&&vg===nodata&&vb===nodata) continue;
+        if (!isFinite(vr)||!isFinite(vg)||!isFinite(vb)) continue;
+        d[oi]=stretch(vr,stretches[0].min,stretches[0].max)??0;
+        d[oi+1]=stretch(vg,stretches[1].min,stretches[1].max)??0;
+        d[oi+2]=stretch(vb,stretches[2].min,stretches[2].max)??0;
+        d[oi+3]=255;
+      } else if (mode==='palette') {
+        const v=rasters[0][ri];
+        if (!isFinite(v)) continue;
+        const t=Math.max(0,Math.min(1,(v-stretches[0].min)/(stretches[0].max-stretches[0].min||1)));
+        const [pr,pg,pb]=applyPalette(palette,t);
+        d[oi]=pr; d[oi+1]=pg; d[oi+2]=pb; d[oi+3]=255;
+      } else if (mode==='float32') {
+        const vr=rasters[0][ri],vg=rasters[1][ri],vb=rasters[2][ri];
+        if (nodata!=null&&vr===nodata&&vg===nodata&&vb===nodata) continue;
+        const sc=scRaster[ri];
+        if (!isFinite(sc)||sc===0) continue;
+        const fr=(vr-128)*sc, fg=(vg-128)*sc, fb=(vb-128)*sc;
+        d[oi]=stretch(fr,stretches[0].min,stretches[0].max)??0;
+        d[oi+1]=stretch(fg,stretches[1].min,stretches[1].max)??0;
+        d[oi+2]=stretch(fb,stretches[2].min,stretches[2].max)??0;
+        d[oi+3]=255;
+      }
+    }
+  }
+  ctx.putImageData(imgD,0,0);
+  return canvas.toDataURL('image/png');
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAP INIT
+// ═══════════════════════════════════════════════════════════
+function initMap() {
+  F.map = L.map('map',{center:[52.5,-1.5],zoom:7,zoomControl:true});
+
+  // ── Named panes for explicit z-ordering ──────────────────
+  // float32 (bottom) → scales (middle) → uint8 (top)
+  F.map.createPane('paneF32');  F.map.getPane('paneF32').style.zIndex  = 210;
+  F.map.createPane('paneSc');   F.map.getPane('paneSc').style.zIndex   = 220;
+  F.map.createPane('paneU8');   F.map.getPane('paneU8').style.zIndex   = 230;
+  // Disable pointer events on all overlay panes so map clicks pass through
+  ['paneF32','paneSc','paneU8'].forEach(p =>
+    F.map.getPane(p).style.pointerEvents = 'none');
+
+  const esri = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {attribution:'© Esri',maxZoom:19});
+  const carto = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    {attribution:'© CartoDB',maxZoom:19});
+  const cartoDark = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    {attribution:'© CartoDB',maxZoom:19}).addTo(F.map);
+  L.control.layers(
+    {'Esri Satellite':esri,'CartoDB Light':carto,'CartoDB Dark':cartoDark},{},{position:'topright'}
+  ).addTo(F.map);
+  F.map.on('zoomend moveend', scheduleRefresh);
+  F.map.on('click', onMapClick);
+}
+
+// ═══════════════════════════════════════════════════════════
+// LOAD COG  (shared for both u8 and sc)
+// ═══════════════════════════════════════════════════════════
+async function loadCOG(which) {
+  const layer = F[which];
+  if (!layer) return;
+  const isU8 = which === 'u8';
+  const isSc = which === 'sc';
+  const bands0 = isU8 ? layer.bands.map(b=>b-1) : [0];
+
+  setLayerStatus(which,'load','Opening COG…');
+  let tiff, images;
+  try {
+    tiff   = await GeoTIFF.fromUrl(layer.url, {allowFullFile:false});
+    images = await buildImageList(tiff);
+  } catch(err) { handleCOGErr(which,err); return; }
+
+  const fullImg = images[0].img;
+  const epsg    = getEPSG(fullImg);
+  const projDef = getProjDef(epsg);
+  const origin  = fullImg.getOrigin();
+  const res     = fullImg.getResolution();
+  const fullW   = fullImg.getWidth();
+  const fullH   = fullImg.getHeight();
+  const numBands= fullImg.getSamplesPerPixel();
+  const nodata  = fullImg.getGDALNoData();
+
+  let fullBounds;
+  try { fullBounds = computeWGS84Extent(origin,res,fullW,fullH,projDef); }
+  catch(e){ handleCOGErr(which,new Error(`Projection EPSG:${epsg}: ${e.message}`)); return; }
+
+  Object.assign(layer, {tiff,images,projDef,epsg,origin,res,fullW,fullH,numBands,nodata,fullBounds});
+
+  setLayerStatus(which,'load',`Fetching overview…`);
+  const ovImg = pickOverview(images, CFG.THUMB_W);
+  const outW  = Math.min(CFG.THUMB_W, ovImg.getWidth());
+  const outH  = Math.round(ovImg.getHeight()*outW/ovImg.getWidth());
+
+  let rasters;
+  try {
+    rasters = await ovImg.readRasters({samples:bands0, width:outW, height:outH, interleave:false, fillValue:0});
+  } catch(err){ handleCOGErr(which,err); return; }
+
+  const palette = document.getElementById('sc-palette')?.value||'viridis';
+  let dataURL, stretches;
+
+  if (isU8) {
+    stretches = [0,1,2].map(i=>computePercentile(Array.from(rasters[i]),CFG.STRETCH_LO,CFG.STRETCH_HI,nodata));
+    dataURL = rastersToDataURL_RGB(rasters[0],rasters[1],rasters[2],outW,outH,stretches[0],stretches[1],stretches[2],nodata);
+  } else {
+    // sc: single band palette
+    stretches = [computePercentile(Array.from(rasters[0]),CFG.STRETCH_LO,CFG.STRETCH_HI,null)];
+    dataURL = rastersToDataURL_Palette(rasters[0],outW,outH,stretches[0].min,stretches[0].max,palette);
+  }
+
+  layer.stretches = stretches;
+  layer.currentRasters = isU8 ? [rasters[0],rasters[1],rasters[2]] : [rasters[0]];
+  layer.currentWindow  = [0,0,fullW,fullH];
+  layer.currentOutW    = outW;
+  layer.currentOutH    = outH;
+
+  const pane = which==='u8' ? 'paneU8' : 'paneSc';
+  const leafletLayer = L.imageOverlay(dataURL, fullBounds, {opacity:layer.opacity, interactive:false, pane});
+  if (layer.visible) leafletLayer.addTo(F.map);
+  layer.leafletLayer = leafletLayer;
+
+  setLayerStatus(which,'ok',`${fullW}×${fullH}px · EPSG:${epsg} · ${numBands} band${numBands>1?'s':''}`);
+  updateStatus(`${F.tileId} loaded · EPSG:${epsg}`);
+
+  // Update name label
+  document.getElementById(`${which}-name`).textContent =
+    isU8 ? `${F.tileId} uint8 (128-band)` : `${F.tileId} scales`;
+
+  // Zoom on u8 load
+  if (isU8 && layer.visible) {
+    F.map.fitBounds(fullBounds, {padding:[20,20]});
+  }
+
+  // Check if float32 can be enabled
+  checkFloat32Ready();
+  scheduleRefresh();
+}
+
+// ═══════════════════════════════════════════════════════════
+// FLOAT32 LAYER INIT
+// ═══════════════════════════════════════════════════════════
+function checkFloat32Ready() {
+  const ready = F.u8?.tiff && F.sc?.tiff;
+  const btn = document.getElementById('f32-btn');
+  if (btn) btn.disabled = !ready;
+  if (!F.f32) {
+    F.f32 = { leafletLayer:null, visible:true, opacity:1, stretches:null, enabled:false };
+  }
+}
+
+function toggleFloat32() {
+  if (!F.u8?.tiff || !F.sc?.tiff) return;
+  F.float32Enabled = !F.float32Enabled;
+  const btn = document.getElementById('f32-btn');
+  btn.classList.toggle('active', F.float32Enabled);
+  btn.textContent = F.float32Enabled ? '⚡ Float32 Active — Refresh on Pan/Zoom' : '⚡ Retrieve Float32 Embeddings';
+  if (F.float32Enabled) {
+    scheduleRefresh();
+    setLayerStatus('f32','load','Computing…');
+  } else {
+    if (F.f32?.leafletLayer) F.map.removeLayer(F.f32.leafletLayer);
+    if (F.f32) F.f32.leafletLayer = null;
+    setLayerStatus('f32','idle','Disabled');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// VIEWPORT REFRESH
+// ═══════════════════════════════════════════════════════════
+function scheduleRefresh() {
+  clearTimeout(F.refreshTimer);
+  F.refreshTimer = setTimeout(refreshViewport, CFG.REFRESH_DELAY);
+}
+
+async function refreshViewport() {
+  if (!F.u8?.tiff && !F.sc?.tiff) return;
+
+  const ref = F.u8 || F.sc;
+  const {projDef,epsg,origin,res,fullW,fullH} = ref;
+  if (!projDef) return;
+
+  const [ox,oy] = origin, [rx,ry] = res;
+  const mb    = F.map.getBounds();
+  const msize = F.map.getSize();
+  const dpr   = window.devicePixelRatio || 1;
+  const needsWarp = epsg!==4326 && epsg!==3857;
+
+  const cogMinX=Math.min(ox,ox+fullW*rx), cogMaxX=Math.max(ox,ox+fullW*rx);
+  const cogMinY=Math.min(oy,oy+fullH*ry), cogMaxY=Math.max(oy,oy+fullH*ry);
+
+  const midLat=(mb.getSouth()+mb.getNorth())/2;
+  const midLng=(mb.getWest()+mb.getEast())/2;
+  let vMinX=Infinity,vMaxX=-Infinity,vMinY=Infinity,vMaxY=-Infinity;
+  for (const [la,ln] of [
+    [mb.getSouth(),mb.getWest()],[mb.getSouth(),mb.getEast()],
+    [mb.getNorth(),mb.getWest()],[mb.getNorth(),mb.getEast()],
+    [midLat,mb.getWest()],[midLat,mb.getEast()],
+    [mb.getSouth(),midLng],[mb.getNorth(),midLng],
+  ]) {
+    try{const{x,y}=fromWGS84(projDef,la,ln);
+      if(x<vMinX)vMinX=x;if(x>vMaxX)vMaxX=x;
+      if(y<vMinY)vMinY=y;if(y>vMaxY)vMaxY=y;}catch(e){}
+  }
+
+  const cMinX=Math.max(vMinX,cogMinX), cMaxX=Math.min(vMaxX,cogMaxX);
+  const cMinY=Math.max(vMinY,cogMinY), cMaxY=Math.min(vMaxY,cogMaxY);
+  if (cMinX>=cMaxX||cMinY>=cMaxY) return;
+
+  const colMin=Math.max(0,Math.floor((cMinX-ox)/rx));
+  const colMax=Math.min(fullW,Math.ceil((cMaxX-ox)/rx));
+  const rowMin=Math.max(0,Math.floor((cMaxY-oy)/ry));
+  const rowMax=Math.min(fullH,Math.ceil((cMinY-oy)/ry));
+  if (colMin>=colMax||rowMin>=rowMax) return;
+
+  const nativeCols=colMax-colMin, nativeRows=rowMax-rowMin;
+  const outW=Math.min(Math.round(msize.x*dpr),2048);
+  const outH=Math.min(Math.round(msize.y*dpr),2048);
+  const win = [colMin,rowMin,colMax,rowMax];
+
+  // Native-CRS corners for mesh warp
+  const nMinX=ox+colMin*rx, nMaxY=oy+rowMin*ry;
+  const nMaxX=ox+colMax*rx, nMinY=oy+rowMax*ry;
+  const newBoundsDirect = needsWarp ? mb : (() => {
+    const sw=toWGS84(projDef,cMinX,cMinY), ne=toWGS84(projDef,cMaxX,cMaxY);
+    return L.latLngBounds([sw.lat,sw.lng],[ne.lat,ne.lng]);
+  })();
+
+  const palette = document.getElementById('sc-palette')?.value||'viridis';
+
+  // ── Refresh u8 layer ─────────────────────────────────────
+  if (F.u8?.tiff && F.u8.visible) {
+    const ovImg = pickOverview(F.u8.images, Math.min(Math.round(outW*fullW/nativeCols),fullW));
+    const scale = fullW/ovImg.getWidth();
+    const ovWin = [
+      Math.max(0,Math.floor(colMin/scale)), Math.max(0,Math.floor(rowMin/scale)),
+      Math.min(ovImg.getWidth(),Math.ceil(colMax/scale)), Math.min(ovImg.getHeight(),Math.ceil(rowMax/scale))
+    ];
+    try {
+      const bands0=F.u8.bands.map(b=>b-1);
+      setLayerStatus('u8','load',needsWarp?'Warping…':'Reading…');
+      const rasters = await ovImg.readRasters({
+        window:ovWin, samples:bands0, width:outW, height:outH, interleave:false, fillValue:0});
+      F.u8.currentRasters=[rasters[0],rasters[1],rasters[2]];
+      F.u8.currentWindow=win; F.u8.currentOutW=outW; F.u8.currentOutH=outH;
+      let dataURL;
+      if (needsWarp) {
+        dataURL=meshWarp([rasters[0],rasters[1],rasters[2]],null,outW,outH,nMinX,nMaxY,nMaxX,nMinY,
+          projDef,mb,outW,outH,F.u8.stretches,F.u8.nodata,'rgb',null);
+      } else {
+        dataURL=rastersToDataURL_RGB(rasters[0],rasters[1],rasters[2],outW,outH,
+          F.u8.stretches[0],F.u8.stretches[1],F.u8.stretches[2],F.u8.nodata);
+      }
+      F.u8.leafletLayer.setUrl(dataURL);
+      F.u8.leafletLayer.setBounds(needsWarp?mb:newBoundsDirect);
+      setLayerStatus('u8','ok',`${nativeCols}×${nativeRows}px`);
+    } catch(e){ setLayerStatus('u8','ok',F.u8.statusMsg); console.warn('[u8 refresh]',e); }
+  }
+
+  // ── Refresh scales layer ──────────────────────────────────
+  let scRastersForFloat = null;
+  if (F.sc?.tiff) {
+    const scImages=F.sc.images;
+    const scFullW=F.sc.fullW;
+    const ovImg2 = pickOverview(scImages, Math.min(Math.round(outW*scFullW/nativeCols),scFullW));
+    const scale2 = scFullW/ovImg2.getWidth();
+    const ovWin2 = [
+      Math.max(0,Math.floor(colMin/scale2)), Math.max(0,Math.floor(rowMin/scale2)),
+      Math.min(ovImg2.getWidth(),Math.ceil(colMax/scale2)), Math.min(ovImg2.getHeight(),Math.ceil(rowMax/scale2))
+    ];
+    try {
+      if (F.sc.visible) setLayerStatus('sc','load','Reading…');
+      const rasters2 = await ovImg2.readRasters({
+        window:ovWin2, samples:[0], width:outW, height:outH, interleave:false, fillValue:0});
+      F.sc.currentRasters=[rasters2[0]];
+      F.sc.currentWindow=win; F.sc.currentOutW=outW; F.sc.currentOutH=outH;
+      scRastersForFloat = rasters2[0];
+      if (F.sc.visible) {
+        let dataURL2;
+        if (needsWarp) {
+          dataURL2=meshWarp([rasters2[0]],null,outW,outH,nMinX,nMaxY,nMaxX,nMinY,
+            projDef,mb,outW,outH,F.sc.stretches,null,'palette',palette);
+        } else {
+          dataURL2=rastersToDataURL_Palette(rasters2[0],outW,outH,
+            F.sc.stretches[0].min,F.sc.stretches[0].max,palette);
+        }
+        F.sc.leafletLayer.setUrl(dataURL2);
+        F.sc.leafletLayer.setBounds(needsWarp?mb:newBoundsDirect);
+        setLayerStatus('sc','ok',`${nativeCols}×${nativeRows}px`);
+      }
+    } catch(e){ if(F.sc.visible) setLayerStatus('sc','ok',F.sc.statusMsg); console.warn('[sc refresh]',e); }
+  }
+
+  // ── Compute and render float32 layer ─────────────────────
+  if (F.float32Enabled && F.u8?.currentRasters && scRastersForFloat) {
+    try {
+      const u8R=F.u8.currentRasters[0], u8G=F.u8.currentRasters[1], u8B=F.u8.currentRasters[2];
+      const scR=scRastersForFloat;
+      // Compute float32 values for stretch
+      const n=outW*outH;
+      const fR=new Float32Array(n), fG=new Float32Array(n), fB=new Float32Array(n);
+      for (let i=0;i<n;i++){
+        const sc=scR[i];
+        fR[i]=(u8R[i]-128)*sc; fG[i]=(u8G[i]-128)*sc; fB[i]=(u8B[i]-128)*sc;
+      }
+      // Recompute stretch from float32 values
+      if (!F.f32.stretches) {
+        F.f32.stretches = [
+          computePercentile(Array.from(fR),CFG.STRETCH_LO,CFG.STRETCH_HI,null),
+          computePercentile(Array.from(fG),CFG.STRETCH_LO,CFG.STRETCH_HI,null),
+          computePercentile(Array.from(fB),CFG.STRETCH_LO,CFG.STRETCH_HI,null),
+        ];
+      }
+
+      let dataURLf;
+      if (needsWarp) {
+        dataURLf=meshWarp(F.u8.currentRasters,scR,outW,outH,nMinX,nMaxY,nMaxX,nMinY,
+          projDef,mb,outW,outH,F.f32.stretches,F.u8.nodata,'float32',null);
+      } else {
+        dataURLf=rastersToDataURL_Float32(u8R,u8G,u8B,scR,outW,outH,
+          F.f32.stretches[0],F.f32.stretches[1],F.f32.stretches[2],F.u8.nodata);
+      }
+
+      if (!F.f32.leafletLayer) {
+        F.f32.leafletLayer = L.imageOverlay(dataURLf,needsWarp?mb:newBoundsDirect,
+          {opacity:F.f32.opacity,interactive:false,pane:'paneF32'}).addTo(F.map);
+      } else {
+        F.f32.leafletLayer.setUrl(dataURLf);
+        F.f32.leafletLayer.setBounds(needsWarp?mb:newBoundsDirect);
+      }
+      F.f32.stretches=null; // recompute each refresh from fresh viewport data
+      setLayerStatus('f32','ok',`float32 · bands ${F.u8.bands.join('/')}`);
+    } catch(e){ setLayerStatus('f32','ok','Error: '+e.message.slice(0,60)); console.warn('[f32]',e); }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// LAYER VISIBILITY / OPACITY
+// ═══════════════════════════════════════════════════════════
+function toggleVis(which) {
+  const vis = document.getElementById(`${which}-vis`)?.checked ?? true;
+  if (which==='f32') {
+    if (F.f32) {
+      F.f32.visible=vis;
+      if (!vis && F.f32.leafletLayer) F.map.removeLayer(F.f32.leafletLayer);
+      else if (vis && F.f32.leafletLayer) F.f32.leafletLayer.addTo(F.map);
+    }
+    return;
+  }
+  const layer=F[which]; if (!layer) return;
+  layer.visible=vis;
+  if (!vis && layer.leafletLayer) F.map.removeLayer(layer.leafletLayer);
+  else if (vis && layer.leafletLayer) {
+    layer.leafletLayer.addTo(F.map);
+    scheduleRefresh();
+  }
+}
+
+function setOpacity(which, v) {
+  const val=parseFloat(v);
+  if (which==='f32') { if(F.f32){F.f32.opacity=val;F.f32.leafletLayer?.setOpacity?.(val);} return; }
+  const layer=F[which]; if(!layer) return;
+  layer.opacity=val;
+  layer.leafletLayer?.setOpacity?.(val);
+}
+
+function reloadBands(which) {
+  const layer=F[which]; if(!layer?.tiff) return;
+  const r=parseInt(document.getElementById(`${which}-br`)?.value);
+  const g=parseInt(document.getElementById(`${which}-bg`)?.value);
+  const b=parseInt(document.getElementById(`${which}-bb`)?.value);
+  if([r,g,b].some(v=>isNaN(v)||v<1||v>128)){alert('Band numbers must be 1–128');return;}
+  layer.bands=[r,g,b];
+  layer.stretches=null;
+  // Copy float32 bands from u8 bands for linked display
+  if(which==='u8'){
+    document.getElementById('f32-br').value=r;
+    document.getElementById('f32-bg').value=g;
+    document.getElementById('f32-bb').value=b;
+  }
+  scheduleRefresh();
+}
+
+// ═══════════════════════════════════════════════════════════
+// TILE LOADING (from STAC)
+// ═══════════════════════════════════════════════════════════
+async function loadTile(tileId, cogUrl, customScaleUrl=null) {
+  // Clear existing layers
+  ['u8','sc','f32'].forEach(which => {
+    const layer=F[which];
+    if (layer?.leafletLayer) F.map.removeLayer(layer.leafletLayer);
+  });
+  F.u8=null; F.sc=null; F.f32=null;
+  F.float32Enabled=false;
+  const btn=document.getElementById('f32-btn');
+  if(btn){btn.classList.remove('active');btn.textContent='⚡ Retrieve Float32 Embeddings';btn.disabled=true;}
+  setLayerStatus('f32','idle','Enable after both layers are loaded');
+
+  F.tileId=tileId;
+
+  // Show layers section
+  document.getElementById('layers-section').style.display='';
+
+  // Set names to loading state
+  document.getElementById('u8-name').textContent=`${tileId} uint8 — loading…`;
+  document.getElementById('sc-name').textContent=`${tileId} scales — loading…`;
+
+  // Build scale URL (use custom URL if provided, e.g. for extra tiles outside the UK bucket)
+  const scaleUrl=customScaleUrl||`${CFG.S3}/${CFG.BUCKET}/${CFG.SCALE_POSTPROC}/${tileId}_scales.tif`;
+
+  // Create layer state objects
+  F.u8 = mkLayerState('u8');
+  F.u8.url = cogUrl;
+  F.u8.bands = [
+    parseInt(document.getElementById('u8-br').value)||54,
+    parseInt(document.getElementById('u8-bg').value)||67,
+    parseInt(document.getElementById('u8-bb').value)||76,
+  ];
+  F.u8.opacity = parseFloat(document.getElementById('u8-opacity').value)||1;
+  F.u8.visible = document.getElementById('u8-vis').checked;
+
+  F.sc = mkLayerState('sc');
+  F.sc.url = scaleUrl;
+  F.sc.opacity = parseFloat(document.getElementById('sc-opacity').value)||0.7;
+  F.sc.visible = document.getElementById('sc-vis').checked;
+
+  F.f32 = {leafletLayer:null,visible:true,opacity:1,stretches:null,enabled:false};
+
+  updateStatus(`Loading ${tileId}…`);
+
+  // Load both COGs in parallel
+  await Promise.all([loadCOG('u8'), loadCOG('sc')]);
+
+  // Render STAC list to mark loaded
+  renderSTAC();
+}
+
+// ═══════════════════════════════════════════════════════════
+// PIXEL INSPECTOR
+// ═══════════════════════════════════════════════════════════
+async function onMapClick(e) {
+  if (!F.u8?.tiff) return;
+  const {lat,lng}=e.latlng;
+  const {projDef,origin:[ox,oy],res:[rx,ry],fullW,fullH}=F.u8;
+
+  const {x:nx,y:ny}=fromWGS84(projDef,lat,lng);
+  const col=Math.floor((nx-ox)/rx);
+  const row=Math.floor((ny-oy)/ry);
+
+  const content=document.getElementById('rp-content');
+  content.innerHTML=`<div class="px-coord">${lat.toFixed(5)}°N &nbsp; ${lng.toFixed(5)}°E</div>
+    <div class="px-note"><span class="spin"></span> Reading pixel…</div>`;
+
+  if (col<0||col>=fullW||row<0||row>=fullH) {
+    content.innerHTML=`<div class="px-coord">${lat.toFixed(5)}°N ${lng.toFixed(5)}°E</div>
+      <div class="px-note" style="color:#556">Outside tile extent</div>`;
+    return;
+  }
+
+  // Fetch all 128 bands for this pixel from u8 COG.
+  // Strategy: use the SECOND-COARSEST overview (small but more accurate than
+  // the absolute coarsest) and read a small 3×3 window centred on the clicked
+  // pixel.  Read bands in sequential batches of 8 — each batch makes only
+  // 8 concurrent HTTP range requests (well inside the browser's 6-8 per host
+  // limit on HTTP/1.1; trivial on HTTP/2).  Yield 0ms between batches so the
+  // browser can dispatch queued requests and keep the UI alive.
+  const BATCH_SIZE = 8;
+  let u8Vals, scVal;
+  try {
+    const allImgs = F.u8.images;    // sorted widest → narrowest
+    // Pick second-to-last overview (coarser = fewer bytes; keep at least one
+    // level of detail so pixel values are spatially meaningful).
+    const ovImg = allImgs.length >= 3
+      ? allImgs[allImgs.length - 2].img   // second coarsest
+      : allImgs[allImgs.length - 1].img;  // fallback: coarsest
+    const ovW = ovImg.getWidth(), ovH = ovImg.getHeight();
+    const scaleF = fullW / ovW;
+    const ovCol  = Math.max(0, Math.min(ovW - 3, Math.floor(col / scaleF)));
+    const ovRow  = Math.max(0, Math.min(ovH - 3, Math.floor(row / scaleF)));
+    // 3×3 window — guarantees we always span at least one full COG tile edge
+    const c0 = ovCol, c1 = ovCol + 3;
+    const r0 = ovRow, r1 = ovRow + 3;
+    const ww = 3, wh = 3;
+    // Center pixel in the 3×3 window
+    const ci = 1, ri = 1;
+
+    const numBands = F.u8.numBands || 128;
+    u8Vals = new Array(numBands).fill(0);
+
+    for (let b = 0; b < numBands; b += BATCH_SIZE) {
+      // Yield to event-loop between batches (lets browser process pending I/O)
+      if (b > 0) await new Promise(resolve => setTimeout(resolve, 0));
+      const batch = Array.from(
+        {length: Math.min(BATCH_SIZE, numBands - b)}, (_, i) => b + i);
+      let rasters;
+      try {
+        rasters = await ovImg.readRasters({
+          window: [c0, r0, c1, r1],
+          samples: batch,
+          interleave: false,
+        });
+      } catch(batchErr) {
+        // On per-batch failure leave those bands as 0 and keep going
+        console.warn(`[px inspector] batch ${b}–${b+batch.length-1} failed:`, batchErr.message);
+        continue;
+      }
+      batch.forEach((bandIdx, i) => {
+        u8Vals[bandIdx] = rasters[i][ri * ww + ci];
+      });
+    }
+  } catch(e){
+    content.innerHTML=`<div class="rp-hint" style="color:#c0392b">Read error: ${esc(e.message.slice(0,120))}</div>`;
+    return;
+  }
+
+  // Fetch scale value — single band, straightforward
+  if (F.sc?.tiff) {
+    try {
+      const scImgs = F.sc.images;
+      // Use second-coarsest (matches u8 strategy)
+      const ovImg2 = scImgs.length >= 3
+        ? scImgs[scImgs.length - 2].img
+        : scImgs[scImgs.length - 1].img;
+      const scaleF2 = F.sc.fullW / ovImg2.getWidth();
+      const ovW2 = ovImg2.getWidth(), ovH2 = ovImg2.getHeight();
+      const ovCol2 = Math.max(0, Math.min(ovW2 - 3, Math.floor(col / scaleF2)));
+      const ovRow2 = Math.max(0, Math.min(ovH2 - 3, Math.floor(row / scaleF2)));
+      const rasters2 = await ovImg2.readRasters({
+        window: [ovCol2, ovRow2, ovCol2 + 3, ovRow2 + 3],
+        samples: [0], interleave: false,
+      });
+      scVal = rasters2[0][1 * 3 + 1];  // center of 3×3
+    } catch(e){ scVal = null; console.warn('[px inspector] scale read failed:', e.message); }
+  }
+
+  // Build display
+  const hasFloat=scVal!=null&&isFinite(scVal)&&scVal!==0;
+  const scaleKnown=scVal!=null&&isFinite(scVal);
+  const scaleWarn=!scaleKnown ? (F.sc?.tiff?'No scale value at this pixel':'Scale COG not loaded') :
+                  scVal===0   ? 'scale = 0 — cannot dequantize' : null;
+
+  let html=`
+    <div class="px-coord">${lat.toFixed(5)}°N &nbsp; ${lng.toFixed(5)}°E</div>
+    <div class="px-note">col=${col} · row=${row}</div>
+
+    <div class="px-scale-box">
+      <div class="px-scale-label">QUANTIZATION SCALE</div>
+      <div class="px-scale-val" style="color:${scaleKnown?'#30e0cc':'#556'}">${scaleKnown?fmt(scVal):'—'}</div>
+      <div class="px-scale-formula">${hasFloat
+        ? `float32<sub>b</sub> = (uint8<sub>b</sub> &minus; 128) &times; <span style="color:#30e0cc">${fmt(scVal)}</span>`
+        : `float32<sub>b</sub> = (uint8<sub>b</sub> &minus; 128) &times; <span style="color:#556">scale</span>`}
+      </div>
+      ${scaleWarn?`<div class="px-scale-warn">${scaleWarn}</div>`:''}
+    </div>
+
+    <div class="px-header">
+      <div class="px-col-hdr u8">uint8 (stored)</div>
+      <div class="px-col-hdr f32">float32 = (u8−128)×scale</div>
+    </div>
+    <div class="px-band-grid">
+      <div class="bnum" style="color:#556;font-size:9px;text-align:right">B#</div>
+      <div class="bnum" style="color:#7eb8f7;font-size:9px">uint8</div>
+      <div class="bnum" style="color:#f0b030;font-size:9px">float32</div>`;
+
+  for (let b=0;b<128;b++) {
+    const u8v=u8Vals[b];
+    const f32v=hasFloat ? (u8v-128)*scVal : null;
+    html+=`<div class="bnum">${b+1}</div>
+      <div class="bv-u8 ${u8v===255?'nd':''}">${u8v===255?'—':u8v}</div>
+      <div class="bv-f32 ${f32v==null?'nd':''}">${f32v==null?'—':fmt(f32v)}</div>`;
+  }
+  html+=`</div>`;
+  content.innerHTML=html;
+
+  // Hide the floating panel (scale is now in the right panel)
+  const floatPanel=document.getElementById('scale-float');
+  if (floatPanel) floatPanel.style.display='none';
+}
+
+function updateScaleFloat(scVal, lat, lng, col, row) {
+  const panel   = document.getElementById('scale-float');
+  const valEl   = document.getElementById('scale-float-val');
+  const frmEl   = document.getElementById('scale-float-formula');
+  const warnEl  = document.getElementById('scale-float-warn');
+  const coordEl = document.getElementById('scale-float-coord');
+
+  const scaleKnown = scVal != null && isFinite(scVal);
+  const canDeq     = scaleKnown && scVal !== 0;
+
+  valEl.textContent   = scaleKnown ? fmt(scVal) : '—';
+  valEl.style.color   = scaleKnown ? '#30e0cc' : '#445';
+  frmEl.innerHTML     = canDeq
+    ? `float32<sub>b</sub> = (uint8<sub>b</sub> − 128) × <span style="color:#30e0cc">${fmt(scVal)}</span>`
+    : `float32<sub>b</sub> = (uint8<sub>b</sub> − 128) × <span style="color:#445">scale</span>`;
+  coordEl.textContent = `col ${col} · row ${row} · ${lat.toFixed(5)}°N ${lng.toFixed(5)}°E`;
+
+  if (!scaleKnown) {
+    warnEl.textContent     = F.sc?.tiff ? 'No scale value at this pixel' : 'Scale COG not loaded';
+    warnEl.style.display   = '';
+  } else if (!canDeq) {
+    warnEl.textContent     = 'scale = 0 — cannot dequantize';
+    warnEl.style.display   = '';
+  } else {
+    warnEl.style.display   = 'none';
+  }
+
+  panel.style.display = '';
+}
+
+// ═══════════════════════════════════════════════════════════
+// STAC BROWSER
+// ═══════════════════════════════════════════════════════════
+async function fetchSTAC() {
+  const btn=document.getElementById('stbtn');
+  btn.textContent='…'; btn.disabled=true;
+  try {
+    // Demo catalog (tools/build_demo_pack.py): embeddings + matching scale per S2 tile
+    const res=await fetch(`${CFG.DEMO_BASE}/tiles.json?_=${Date.now()}`);
+    if (!res.ok) throw new Error(`tiles.json: HTTP ${res.status}`);
+    const data=await res.json();
+    F.stacRaw=(data.tiles||[]).map(t=>({id:t.s2_tile,_label:`${t.s2_tile} · ${t.start_date} → ${t.end_date}`,
+      assets:{map:{href:`${CFG.DEMO_BASE}/${t.embeddings}`}},_scaleUrl:`${CFG.DEMO_BASE}/${t.scale}`,_extra:true}));
+    // Append extra (non-STAC) tiles as synthetic items
+    (CFG.EXTRA_TILES||[]).forEach(t=>{
+      if (!F.stacRaw.find(i=>i.id===t.id)) {
+        F.stacRaw.push({id:t.id,_label:t.label,assets:{map:{href:t.cogUrl}},_scaleUrl:t.scaleUrl,_extra:true});
+      }
+    });
+    F.stacItems=[...F.stacRaw];
+    document.getElementById('stac-badge').textContent=`${F.stacRaw.length} tiles`;
+    renderSTAC();
+  } catch(e){
+    document.getElementById('stlist').innerHTML=`<div class="empty" style="color:#c0392b">Error: ${esc(e.message)}</div>`;
+  }
+  btn.textContent='Refresh'; btn.disabled=false;
+}
+
+function filterSTAC() {
+  const q=document.getElementById('stfil').value.toLowerCase();
+  F.stacItems=q?F.stacRaw.filter(i=>i.id.toLowerCase().includes(q)):[...F.stacRaw];
+  renderSTAC();
+}
+
+function renderSTAC() {
+  const el=document.getElementById('stlist');
+  if (!F.stacItems.length){el.innerHTML='<div class="empty">No items</div>';return;}
+  el.innerHTML=F.stacItems.map(item=>{
+    const tileId=item.id.replace(/_embeddings$/i,'');
+    const loaded=F.tileId===tileId;
+    const label=item._label||tileId;
+    const scaleArg=item._scaleUrl||'';
+    return `<div class="sti ${loaded?'loaded':''}" onclick="selectSTACItem('${esc(item.id)}','${esc(item.assets?.map?.href||'')}','${esc(scaleArg)}')">
+      <span class="stiname">${esc(label)}</span>
+      ${loaded?'<span style="color:#30e0cc;font-size:11px;font-weight:700">✓</span>'
+              :'<span style="color:#30e0cc;font-size:17px;line-height:1">+</span>'}
+    </div>`;
+  }).join('');
+}
+
+async function selectSTACItem(itemId, hrefFromList, scaleUrl='') {
+  let cogUrl=hrefFromList;
+  if (!cogUrl) {
+    try {
+      const res=await fetch(`${CFG.STAC_BASE}/collections/${CFG.STAC_COL}/items/${encodeURIComponent(itemId)}`);
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const item=await res.json();
+      const assets=item.assets||{};
+      const keys=Object.keys(assets);
+      const key=keys.find(k=>k==='map'||k==='data'||k==='embeddings'||k==='cog')
+               ||keys.find(k=>(assets[k].type||'').includes('tiff'))||keys[0];
+      if (!key) throw new Error('No COG asset found');
+      cogUrl=assets[key].href;
+    } catch(e){alert(`Failed to get STAC item: ${e.message}`);return;}
+  }
+  if (!cogUrl.startsWith('http')) {
+    cogUrl=new URL(cogUrl,`${CFG.STAC_BASE}/collections/${CFG.STAC_COL}/items/${itemId}`).href;
+  }
+  const tileId=itemId.replace(/_embeddings$/i,'');
+  await loadTile(tileId, cogUrl, scaleUrl||null);
+}
+
+// ═══════════════════════════════════════════════════════════
+// STATUS / UTILITIES
+// ═══════════════════════════════════════════════════════════
+function setLayerStatus(which, s, msg) {
+  const el=document.getElementById(`${which}-stat`);
+  if (!el) return;
+  const cls=s==='ok'?'sok':s==='load'?'sload':'serr';
+  el.innerHTML=`<span class="${cls}">${s==='load'?'<span class="spin"></span>':''}${esc(msg)}</span>`;
+}
+function updateStatus(msg) {
+  document.getElementById('statusbar').textContent=msg;
+}
+function handleCOGErr(which, err) {
+  const msg=(err?.message||String(err)).slice(0,150);
+  if (/fetch|CORS|network|NetworkError|blocked/i.test(msg)) {
+    document.getElementById('cwarn').style.display='block';
+  }
+  setLayerStatus(which,'err',msg);
+  updateStatus(`Error loading ${which}: ${msg.slice(0,80)}`);
+}
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmt(v){
+  if(v==null||v===undefined)return'N/A';
+  if(!isFinite(v))return String(v);
+  return Number.isInteger(v)?String(v):v.toFixed(4);
+}
+
+// ═══════════════════════════════════════════════════════════
+// RESIZE HANDLES
+// ═══════════════════════════════════════════════════════════
+function initResize(handleId, targetId, side) {
+  const handle=document.getElementById(handleId);
+  const target=document.getElementById(targetId);
+  let dragging=false, startX=0, startW=0;
+  handle.addEventListener('mousedown',e=>{
+    dragging=true; startX=e.clientX; startW=target.offsetWidth;
+    handle.classList.add('dragging'); e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if (!dragging) return;
+    const dx=e.clientX-startX;
+    const nw=Math.max(200,Math.min(560,startW+(side==='left'?dx:-dx)));
+    target.style.width=nw+'px';
+    F.map?.invalidateSize?.();
+  });
+  document.addEventListener('mouseup',()=>{
+    if(dragging){dragging=false;handle.classList.remove('dragging');}
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  initMap();
+  initResize('sb-handle','sb','left');
+  initResize('rp-handle','rp','right');
+  initScaleFloatDrag();
+  // Auto-load STAC catalog
+  fetchSTAC();
+});
+
+// ═══════════════════════════════════════════════════════════
+// DRAG for floating scale panel
+// ═══════════════════════════════════════════════════════════
+function initScaleFloatDrag() {
+  const panel = document.getElementById('scale-float');
+  const head  = document.getElementById('scale-float-head');
+  let dragging = false, ox = 0, oy = 0, startL = 0, startT = 0;
+
+  head.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    dragging = true;
+    // On first drag convert the CSS centering to absolute pixel position
+    const rect = panel.getBoundingClientRect();
+    panel.style.left      = rect.left + 'px';
+    panel.style.top       = rect.top  + 'px';
+    panel.style.bottom    = 'auto';
+    panel.style.transform = 'none';
+    startL = rect.left;
+    startT = rect.top;
+    ox = e.clientX;
+    oy = e.clientY;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    panel.style.left = (startL + e.clientX - ox) + 'px';
+    panel.style.top  = (startT + e.clientY - oy) + 'px';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+}
+</script>
+</body>
+</html>

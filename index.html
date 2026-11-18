@@ -1,0 +1,3023 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorldCereal Embeddings Demo</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.9.0/dist/proj4.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #10111a; color: #d4d8e8;
+  height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* Header */
+#hdr {
+  background: #181a2a; border-bottom: 1px solid #252840;
+  padding: 10px 18px; display: flex; align-items: center; gap: 14px; flex-shrink: 0; z-index: 1100;
+}
+#hdr h1  { font-size: 16px; font-weight: 700; color: #7eb8f7; }
+#hdr .sub{ font-size: 13px; color: #7a86a0; }
+#hdr .hint{ font-size:13px; color:#4a6; background:#132415;
+  padding:4px 11px; border-radius:4px; border:1px solid #254428; }
+.wc-logo-link { display:flex; align-items:center; flex-shrink:0; }
+.wc-logo { height:30px; width:auto; }
+.hdr-nav { display:flex; gap:6px; flex-shrink:0; }
+.nav-pill {
+  font-size:13px; font-weight:600; padding:5px 14px; border-radius:4px;
+  border:1px solid #252840; color:#8892aa; background:#1e2136;
+  text-decoration:none; cursor:pointer; white-space:nowrap; transition:all .15s;
+}
+.nav-pill:hover { border-color:#3a7bd5; color:#7eb8f7; }
+.nav-pill.active { background:#1b2f50; border-color:#3a7bd5; color:#7eb8f7; cursor:default; }
+
+/* Explore 3D button — lives in the header bar */
+.tbtn-explore {
+  margin-left: auto;
+  position: relative;
+  background: #2a1e00; border: 1px solid #c8922a; color: #f0b030;
+  padding: 4px 14px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  font-weight: 600; white-space: nowrap; transition: all .15s;
+}
+.tbtn-explore:hover { background:#3a2a00; border-color:#f0b030; color:#ffd060; }
+.tbtn-explore.active {
+  background:#f0b030; border-color:#f0b030; color:#1a1200; font-weight:700;
+  box-shadow: 0 0 10px rgba(240,176,48,.4);
+}
+/* CSS tooltip — appears below button on hover */
+.tbtn-explore::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 8px); right: 0;
+  background: #1e2136; color: #c8d0e8; border: 1px solid #3a4060;
+  padding: 6px 11px; border-radius: 5px; font-size: 10px; font-weight: normal;
+  white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity .2s; z-index: 2000;
+}
+.tbtn-explore:hover::after { opacity: 1; }
+
+/* Layout */
+#main { display: flex; flex: 1; overflow: hidden; }
+
+/* Sidebar */
+#sb { width:310px; min-width:220px; max-width:560px; background:#181a2a;
+  display:flex; flex-direction:column; overflow:hidden; z-index:1050; flex-shrink:0; }
+
+/* Resize handle between sidebar and map */
+#sb-handle {
+  width:5px; flex-shrink:0; cursor:col-resize; z-index:1060;
+  background:#1a1c2e; border-right:1px solid #252840;
+  transition:background .15s;
+}
+#sb-handle:hover, #sb-handle.dragging { background:#3a7bd5; }
+#sb-scroll { flex:1; overflow-y:auto; padding:10px 10px 20px; }
+#sb-scroll::-webkit-scrollbar { width:5px; }
+#sb-scroll::-webkit-scrollbar-thumb { background:#2d3155; border-radius:3px; }
+
+/* Section */
+.sec { margin-bottom:14px; }
+.sec-title {
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.8px;
+  color:#8892aa; padding:4px 0 6px; border-bottom:1px solid #222438; margin-bottom:8px;
+  display:flex; align-items:center; justify-content:space-between;
+}
+.sbadge { font-size:10px; font-weight:600; padding:1px 7px; border-radius:8px; text-transform:none; letter-spacing:0; }
+.bok  { background:#1b3320; color:#4a6; }
+.bwarn{ background:#332210; color:#c8922a; }
+
+/* Layer cards */
+.lcard {
+  background:#1e2136; border:1px solid #272b47; border-radius:6px;
+  padding:8px 10px; margin-bottom:7px; transition:border-color .15s;
+}
+.lcard.vis  { border-left:3px solid #3a7bd5; }
+.lcard.err  { border-left:3px solid #c0392b; }
+.lcard.load { border-left:3px solid #c8922a; }
+
+.lrow { display:flex; align-items:center; gap:7px; }
+.lchk { width:15px; height:15px; cursor:pointer; accent-color:#3a7bd5; flex-shrink:0; }
+.lname{ flex:1; font-size:11px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.lpill{ font-size:9px; font-weight:700; text-transform:uppercase; padding:2px 5px; border-radius:3px; flex-shrink:0; }
+.prgb { background:#1a3a5c; color:#7eb8f7; }
+.pemb { background:#1e3b20; color:#7ecf8a; }
+.pcust{ background:#3a1f4a; color:#c9a0f7; }
+.ldel { background:none; border:none; color:#445; font-size:15px; cursor:pointer; padding:0 2px; line-height:1; }
+.ldel:hover { color:#c0392b; }
+
+.loprow { display:flex; align-items:center; gap:6px; margin-top:6px; }
+.loprow label { font-size:10px; color:#7a86a0; flex-shrink:0; }
+.loprow input[type=range] { flex:1; height:6px; accent-color:#3a7bd5; cursor:pointer; border-radius:3px; }
+.loprow span { font-size:10px; color:#8892aa; width:28px; text-align:right; }
+
+.lstat { font-size:10px; margin-top:5px; padding:3px 6px; border-radius:3px; background:#13151f; }
+.sok  { color:#4a6; }  .sload { color:#c8922a; } .serr { color:#c0392b; }
+
+.brow {
+  display:flex; align-items:center; gap:5px; margin-top:7px;
+  padding-top:7px; border-top:1px solid #222438;
+}
+.brow label { font-size:10px; color:#7a86a0; flex-shrink:0; }
+.binp {
+  width:44px; background:#13151f; border:1px solid #2d3155;
+  color:#d4d8e8; padding:3px 5px; border-radius:3px; font-size:11px; text-align:center;
+}
+.binp:focus { outline:none; border-color:#3a7bd5; }
+.bxs {
+  flex:1; background:#1e2136; border:1px solid #2d3155; color:#7eb8f7;
+  padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px; white-space:nowrap;
+}
+.bxs:hover { background:#252840; border-color:#3a7bd5; }
+
+/* Stretch control row (embedding layers only) */
+.strow {
+  display:flex; align-items:center; gap:5px; margin-top:5px;
+}
+.stmode {
+  font-size:10px; color:#6a7490; flex:1;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.stmode b { color:#a0aac0; font-weight:600; }
+.bxs-ref { background:#1b2a1b; border-color:#254428; color:#4a9; }
+.bxs-ref:hover { background:#1f3322; border-color:#4a9; }
+.bxs-dl { background:#1a1a2e; border-color:#3a3a6b; color:#8898d8; text-decoration:none; }
+.bxs-dl:hover { background:#22224a; border-color:#5a5ac8; color:#a0b0f0; }
+
+.empty { font-size:11px; color:#6a7490; text-align:center; padding:10px 0; }
+
+/* STAC */
+.stacbar { display:flex; gap:6px; margin-bottom:8px; }
+.stfil {
+  flex:1; background:#1e2136; border:1px solid #272b47;
+  color:#d4d8e8; padding:5px 8px; border-radius:4px; font-size:11px;
+}
+.stfil:focus { outline:none; border-color:#3a7bd5; }
+.bsm {
+  background:#1e2136; border:1px solid #3a7bd5; color:#7eb8f7;
+  padding:5px 10px; border-radius:4px; cursor:pointer; font-size:11px; white-space:nowrap; flex-shrink:0;
+}
+.bsm:hover { background:#222a4a; }
+.bsm:disabled { opacity:.5; cursor:not-allowed; }
+
+.stlist { max-height:180px; overflow-y:auto; }
+.stlist::-webkit-scrollbar { width:4px; }
+.stlist::-webkit-scrollbar-thumb { background:#2d3155; }
+.sti {
+  display:flex; align-items:center; gap:6px; padding:5px 8px; border-radius:4px;
+  cursor:pointer; border:1px solid transparent; margin-bottom:3px; transition:background .1s;
+}
+.sti:hover { background:#1e2136; border-color:#272b47; }
+.sti.loaded { border-left:3px solid #4a6; }
+.stiname { flex:1; font-size:11px; }
+
+/* Add URL */
+.addform { display:flex; flex-direction:column; gap:6px; }
+.urlinp {
+  background:#1e2136; border:1px solid #272b47; color:#d4d8e8;
+  padding:6px 8px; border-radius:4px; font-size:11px; width:100%;
+}
+.urlinp::placeholder { color:#445; }
+.urlinp:focus { outline:none; border-color:#3a7bd5; }
+.addrow { display:flex; gap:6px; align-items:center; }
+.typesel {
+  flex:1; background:#1e2136; border:1px solid #272b47; color:#d4d8e8;
+  padding:5px 6px; border-radius:4px; font-size:11px;
+}
+.badd {
+  background:#1b3a6b; border:1px solid #3a7bd5; color:#7eb8f7;
+  padding:5px 14px; border-radius:4px; cursor:pointer; font-size:11px; white-space:nowrap;
+}
+.badd:hover { background:#1e4480; }
+
+/* CORS warning */
+#cwarn {
+  background:#2a1800; border:1px solid #c8922a; border-radius:5px;
+  padding:8px 10px; font-size:10px; color:#c8922a; margin-bottom:10px; display:none; line-height:1.6;
+}
+#cwarn a { color:#f0b84a; }
+#cwarn code { background:#3a2500; padding:1px 4px; border-radius:3px; font-size:10px; }
+
+/* Map */
+#mapc { flex:1; position:relative; overflow:hidden; }
+#map  { width:100%; height:100%; }
+
+/* Pixel panel */
+#pxp {
+  position:absolute; bottom:22px; left:50%; transform:translateX(-50%);
+  background:rgba(24,26,42,.97); border:1px solid #272b47; border-radius:8px;
+  padding:10px 14px 12px; min-width:300px; min-height:80px;
+  z-index:1200; display:none; backdrop-filter:blur(10px);
+  box-shadow:0 8px 32px rgba(0,0,0,.5);
+  resize:both; overflow:auto;
+}
+.pxhead { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;
+  cursor:move; user-select:none; }
+.pxtitle { font-size:11px; font-weight:700; color:#8892aa; text-transform:uppercase; letter-spacing:.5px; }
+.pxcoord { font-size:10px; color:#7a86a0; }
+.pxclose { background:none; border:none; color:#556; cursor:pointer; font-size:16px; line-height:1; }
+.pxclose:hover { color:#c0392b; }
+#pxres { display:flex; flex-direction:column; gap:6px; }
+.pxblk  { background:#1e2136; border-radius:4px; padding:6px 9px; }
+.pxlbl  { font-size:10px; color:#8892aa; margin-bottom:3px; }
+.pxvals { font-size:12px; color:#d4d8e8; line-height:1.7; word-break:break-all; }
+
+/* Spinner */
+.spin { display:inline-block; width:11px; height:11px; border:2px solid #2d3155;
+  border-top-color:#7eb8f7; border-radius:50%; animation:sp .8s linear infinite; vertical-align:middle; margin-right:4px; }
+@keyframes sp { to { transform:rotate(360deg); } }
+
+/* Leaflet overrides */
+.leaflet-control-layers { background:#181a2a !important; border-color:#252840 !important; }
+.leaflet-control-zoom a { background:#181a2a !important; color:#7eb8f7 !important; border-color:#252840 !important; }
+
+/* ── PCA Sampler button ─────────────────────────────────────── */
+.tbtn-sampler {
+  background: #001e1e; border: 1px solid #1a9a8a; color: #30e0cc;
+  padding: 4px 14px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  font-weight: 600; white-space: nowrap; transition: all .15s; position: relative;
+}
+.tbtn-sampler:hover { background: #002828; border-color: #30e0cc; color: #60f0e0; }
+.tbtn-sampler.active {
+  background: #30e0cc; border-color: #30e0cc; color: #001a18; font-weight: 700;
+  box-shadow: 0 0 10px rgba(48,224,204,.4);
+}
+.tbtn-sampler::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 8px); right: 0;
+  background: #1e2136; color: #c8d0e8; border: 1px solid #3a4060;
+  padding: 6px 11px; border-radius: 5px; font-size: 10px; font-weight: normal;
+  white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity .2s; z-index: 2000;
+}
+.tbtn-sampler:hover::after { opacity: 1; }
+
+/* ── PCA Sampler panel ─────────────────────────────────────── */
+#sp {
+  position: absolute; bottom: 28px; left: 14px;
+  width: 680px; height: 440px; min-width: 420px; min-height: 300px;
+  background: rgba(14,15,24,.97); border: 1px solid #1a3a38; border-radius: 9px;
+  z-index: 1200; display: none; flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0,0,0,.6); backdrop-filter: blur(12px);
+  resize: both; overflow: hidden;
+}
+.sp-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid #1a2a28; flex-shrink: 0;
+  cursor: move; user-select: none;
+}
+.sp-title { font-size: 11px; font-weight: 700; color: #30e0cc; text-transform: uppercase; letter-spacing: .5px; }
+/* ↓↓ STATUS TEXT — bump font-size and color here to taste ↓↓ */
+#sp-status { flex: 1; font-size: 12px; color: #a8d8d0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ↑↑ font-size: 12px  |  color: #a8d8d0 (soft teal-white) ↑↑ */
+.sp-close { background: none; border: none; color: #556; cursor: pointer; font-size: 16px; line-height: 1; flex-shrink: 0; }
+.sp-close:hover { color: #c0392b; }
+
+.sp-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+.sp-sidebar {
+  width: 190px; min-width: 150px; flex-shrink: 0;
+  border-right: 1px solid #1a2a28; display: flex; flex-direction: column;
+  overflow: hidden; padding: 10px 10px 6px;
+}
+.sp-ctrl { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #1a2a28; }
+.sp-ctrl label { font-size: 10px; color: #7a86a0; }
+.sp-ctrl input[type=text] {
+  background: #13151f; border: 1px solid #2d3155; color: #d4d8e8;
+  padding: 4px 7px; border-radius: 3px; font-size: 11px; width: 100%;
+}
+.sp-ctrl input[type=text]:focus { outline: none; border-color: #30e0cc; }
+.sp-colorrow { display: flex; align-items: center; gap: 6px; }
+.sp-colorlbl { font-size: 10px; color: #7a86a0; flex: 1; }
+input.sp-colorpick { width: 28px; height: 22px; border: none; border-radius: 3px; cursor: pointer; padding: 1px; background: none; }
+.sp-drawbtn {
+  background: #002828; border: 1px solid #1a9a8a; color: #30e0cc;
+  padding: 5px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;
+  text-align: center; transition: all .15s; width: 100%;
+}
+.sp-drawbtn:hover { background: #003838; border-color: #30e0cc; }
+.sp-drawbtn.drawing { background: #30e0cc; color: #001a18; border-color: #30e0cc; }
+.sp-drawbtn:disabled { opacity: .45; cursor: not-allowed; }
+
+.sp-list-wrap { flex: 1; overflow-y: auto; min-height: 0; margin-bottom: 4px; }
+.sp-list-wrap::-webkit-scrollbar { width: 4px; }
+.sp-list-wrap::-webkit-scrollbar-thumb { background: #1a2a38; border-radius: 2px; }
+
+.sp-item { display: flex; align-items: center; gap: 6px; padding: 5px 2px; border-radius: 4px; margin-bottom: 2px; }
+.sp-item:hover { background: #1a1c30; }
+.sp-swatch { width: 11px; height: 11px; border-radius: 2px; flex-shrink: 0; }
+.sp-item-name { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-item-count { font-size: 10px; color: #4a5570; flex-shrink: 0; }
+.sp-item-del { background: none; border: none; color: #334; cursor: pointer; font-size: 14px; line-height: 1; flex-shrink: 0; padding: 0 2px; }
+.sp-item-del:hover { color: #c0392b; }
+
+.sp-clear {
+  background: #13151f; border: 1px solid #252840; color: #556;
+  padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 10px;
+  margin-top: 4px; width: 100%; flex-shrink: 0;
+}
+.sp-clear:hover { color: #c0392b; border-color: #552020; }
+
+#sp-plot { flex: 1; min-width: 0; min-height: 220px; overflow: hidden; }
+
+/* ── 3-D Explore panel ─────────────────────────────────────── */
+#ep {
+  position:absolute; bottom:28px; right:14px;
+  width:500px; height:440px; min-width:300px; min-height:260px;
+  background:rgba(14,15,24,.97); border:1px solid #272b47; border-radius:9px;
+  z-index:1200; display:none; flex-direction:column;
+  box-shadow:0 10px 40px rgba(0,0,0,.6); backdrop-filter:blur(12px);
+  resize:both; overflow:hidden;
+}
+.ep-head {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 12px; border-bottom:1px solid #1e2038; flex-shrink:0;
+  cursor:move; user-select:none;
+}
+.ep-title { font-size:11px; font-weight:700; color:#8892aa; text-transform:uppercase; letter-spacing:.5px; }
+/* ↓↓ STATUS TEXT — bump font-size and color here to taste ↓↓ */
+#ep-status { flex:1; font-size:12px; color:#d4b87a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* ↑↑ font-size: 12px  |  color: #d4b87a (warm amber-white) ↑↑ */
+.ep-close { background:none; border:none; color:#556; cursor:pointer; font-size:16px; line-height:1; flex-shrink:0; }
+.ep-close:hover { color:#c0392b; }
+#ep-plot { flex:1; min-height:320px; border-radius:0 0 8px 8px; overflow:hidden; }
+.ep-legend {
+  font-size:10px; color:#4a5570; padding:4px 12px; flex-shrink:0;
+  border-top:1px solid #1e2038; display:flex; gap:14px;
+}
+.ep-legend span { display:inline-flex; align-items:center; gap:4px; }
+.ep-legend b { display:inline-block; width:8px; height:8px; border-radius:2px; }
+
+/* S2 tile grid label */
+.s2-tile-label { background:transparent !important; border:none !important; box-shadow:none !important; font-size:10px; font-weight:700; color:#5a9be8; text-shadow:0 0 3px #000, 0 0 6px #000; }
+.s2-toggle-row { display:flex; align-items:center; gap:6px; }
+.s2-toggle-row label { font-size:10px; color:#8892aa; display:flex; align-items:center; gap:5px; cursor:pointer; }
+#s2-status { font-size:10px; color:#4a5570; margin-top:3px; }
+
+/* S2 heading style (prominent) */
+.s2-heading {
+  font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.8px;
+  color:#7eb8f7; display:flex; align-items:center; gap:8px;
+}
+
+/* Scrollable embedding layer list */
+#le { max-height:200px; overflow-y:auto; }
+#le::-webkit-scrollbar { width:4px; }
+#le::-webkit-scrollbar-thumb { background:#2d3155; border-radius:2px; }
+
+/* Tour halo spotlight */
+#tour-halo {
+  position:fixed; z-index:9001; pointer-events:none; display:none;
+  border:2px solid #3a7bd5; border-radius:6px;
+  box-shadow: 0 0 0 4000px rgba(0,0,0,0.25), 0 0 0 4px rgba(58,123,213,0.3), 0 0 22px rgba(58,123,213,0.8);
+  animation: haloGlow 1.8s ease-in-out infinite;
+}
+@keyframes haloGlow {
+  0%,100% { box-shadow: 0 0 0 4000px rgba(0,0,0,0.25), 0 0 0 4px rgba(58,123,213,0.3), 0 0 22px rgba(58,123,213,0.8); }
+  50%      { box-shadow: 0 0 0 4000px rgba(0,0,0,0.25), 0 0 0 7px rgba(58,123,213,0.5), 0 0 36px rgba(58,123,213,1.0); }
+}
+
+/* Tour modal */
+#tour-overlay {
+  position:fixed; inset:0; z-index:9000; background:rgba(0,0,0,.25);
+  display:flex; align-items:center; justify-content:center; transition:opacity .2s;
+  pointer-events:none;
+}
+#tour-box {
+  background:#181a2a; border:1px solid #2d3565; border-radius:10px;
+  width:420px; max-width:calc(100vw - 32px); box-shadow:0 16px 60px #000c; overflow:hidden;
+  pointer-events:all;
+}
+#tour-bar { display:flex; gap:3px; padding:10px 14px 0; }
+.tour-dot { flex:1; height:3px; border-radius:2px; background:#1e2346; transition:background .2s; }
+.tour-dot.active { background:#3a7bd5; }
+.tour-dot.done   { background:#2a5a9a; }
+#tour-body { padding:18px 20px 12px; }
+#tour-icon { font-size:32px; margin-bottom:10px; }
+#tour-title { font-size:17px; font-weight:700; color:#a8c8f8; margin-bottom:10px; }
+#tour-desc  { font-size:14px; color:#8898b8; line-height:1.7; }
+#tour-desc b { color:#c0d4f0; }
+#tour-desc code { background:#111422; padding:1px 5px; border-radius:3px; font-size:12px; color:#6ac; }
+#tour-foot {
+  display:flex; align-items:center; gap:6px;
+  padding:10px 16px 14px; border-top:1px solid #1e2036;
+}
+.tour-btn { padding:6px 16px; border-radius:5px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid #2d3155; transition:all .15s; }
+.tour-btn-skip   { background:none; color:#5a6480; margin-right:auto; border-color:transparent; }
+.tour-btn-skip:hover { color:#8892aa; }
+.tour-btn-prev   { background:#1e2136; color:#7a86a0; }
+.tour-btn-prev:hover { background:#252840; color:#a0aac0; }
+.tour-btn-next   { background:#1b2f50; color:#7eb8f7; border-color:#3a7bd5; }
+.tour-btn-next:hover { background:#1e3a62; }
+.tour-btn-finish { background:#1b3320; color:#4abf6a; border-color:#2d6b2d; }
+.tour-btn-finish:hover { background:#1f3a26; }
+#tour-step-ctr { font-size:11px; color:#4a5570; margin-right:auto; }
+#btn-tour-reopen {
+  font-size:11px; font-weight:700; padding:3px 9px; border-radius:4px;
+  border:1px solid #2d3a6a; color:#5a7ab0; background:#131828;
+  cursor:pointer; flex-shrink:0; transition:all .15s;
+}
+#btn-tour-reopen:hover { border-color:#3a7bd5; color:#7eb8f7; }
+</style>
+</head>
+<body>
+
+<!-- ═══ TOUR HALO SPOTLIGHT ══════════════════════════════════ -->
+<div id="tour-halo"></div>
+
+<!-- ═══ TOUR MODAL ════════════════════════════════════════════ -->
+<div id="tour-overlay" style="display:none;">
+  <div id="tour-box">
+    <div id="tour-bar"></div>
+    <div id="tour-body">
+      <div id="tour-icon"></div>
+      <div id="tour-title"></div>
+      <div id="tour-desc"></div>
+    </div>
+    <div id="tour-foot">
+      <button class="tour-btn tour-btn-skip" onclick="skipTour()">Skip Tour</button>
+      <span id="tour-step-ctr"></span>
+      <button class="tour-btn tour-btn-prev" id="tour-prev" onclick="tourStep(-1)">← Back</button>
+      <button class="tour-btn tour-btn-next" id="tour-next" onclick="tourStep(1)">Next →</button>
+    </div>
+  </div>
+</div>
+
+<div id="hdr">
+  <a href="https://worldcereal.github.io" target="_blank" class="wc-logo-link" title="WorldCereal Project">
+    <img src="worldcereal_logo.jpg" alt="WorldCereal" class="wc-logo" onerror="this.style.display='none'">
+  </a>
+  <h1>🛰 WorldCereal Embeddings Explorer · Europe demo</h1>
+  <span class="sub">Multi-layer • Viewport-adaptive • 1–99% stretch</span>
+  <nav class="hdr-nav">
+    <span class="nav-pill active">🗺 Viewer</span>
+    <a href="float.html" class="nav-pill" target="_blank">⚡ Float32</a>
+    <a href="classify.html" class="nav-pill" target="_blank">🔬 Classify</a>
+  </nav>
+  <button class="tbtn-explore" id="btn-explore"
+    data-tip="Load an embedding tile from STAC, then click and drag a rectangle over it"
+    onclick="toggleExplore()">⬡ Explore 3D</button>
+  <button class="tbtn-sampler" id="btn-sampler"
+    data-tip="Load an embedding tile, then draw polygons over different land cover types"
+    onclick="toggleSampler()">⬡ PCA Sampler</button>
+  <span class="hint">Click map for pixel values</span>
+  <button id="btn-tour-reopen" onclick="showTour(true)" title="Open page tour">? Tour</button>
+</div>
+
+<div id="main">
+  <div id="sb">
+    <div id="sb-scroll">
+
+      <div id="proxy-status" style="font-size:10px;color:#4a5570;margin-bottom:8px;display:none;"></div>
+
+      <div id="cwarn">
+        ⚠ <strong>CORS / network error.</strong><br>
+        <span id="cwarn-detail">The S3 bucket needs these CORS headers:</span><br>
+        <code>Access-Control-Allow-Origin: *</code><br>
+        <code>Access-Control-Allow-Headers: Range, Content-Type</code><br>
+        <code>Access-Control-Expose-Headers: Content-Range, Accept-Ranges</code><br>
+        <a href="https://docs.cloudferro.com/en/latest/s3/s3-cors.html" target="_blank">Cloudferro CORS setup ↗</a>
+      </div>
+
+      <!-- ── S2 TILE GRID (top) ──────────────────────────────── -->
+      <div class="sec" style="border:1px solid #1e3060;border-radius:6px;padding:8px 10px;background:#111422;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <span class="s2-heading">🗺 S2 Tile Grid</span>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:#8892aa;">
+            <input type="checkbox" id="s2-tiles-toggle" checked onchange="toggleS2TilesLayer(this.checked)" style="margin:0;">
+            Show
+          </label>
+        </div>
+        <div id="s2-status" style="font-size:10px;color:#4a5570;">Loading tile grid…</div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">Display Layers (RGB) <span id="cnt-d" class="sbadge">0</span></div>
+        <div id="ld"><div class="empty">Loading pre-configured layer…</div></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">Embedding Layers (128-band) <span id="cnt-e" class="sbadge">0</span></div>
+        <div id="le"><div class="empty">Browse STAC catalog below</div></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">WorldCereal products 2024 <span id="cnt-prod" class="sbadge">0</span></div>
+        <div id="prod-status" style="font-size:10px;color:#4a5570;margin-bottom:6px;">Loading demo catalog…</div>
+        <div class="stlist" id="prodlist" style="max-height:none"><div class="empty">…</div></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">Embedding tiles (128-band) <span id="cnt-tiles" class="sbadge">0</span></div>
+        <div class="stacbar">
+          <input class="stfil" id="stfil" type="text" placeholder="Filter S2 tile…" oninput="filterSTAC()"/>
+          <button class="bsm" id="stbtn" onclick="fetchSTAC()">Reload</button>
+        </div>
+        <div style="font-size:10px;color:#4a5570;margin-bottom:6px;">Click a tile (or a map pixel) to load its 128 bands for the identify, sampler and PCA tools.</div>
+        <div class="stlist" id="stlist"><div class="empty">Loading…</div></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">Add Custom COG URL</div>
+        <div class="addform">
+          <input class="urlinp" id="addurl"  type="text" placeholder="https://… your COG URL"/>
+          <input class="urlinp" id="addname" type="text" placeholder="Layer name (optional)"/>
+          <div class="addrow">
+            <select class="typesel" id="addtype">
+              <option value="display">3-band display</option>
+              <option value="embed">128-band embedding</option>
+            </select>
+            <button class="badd" onclick="addCustomLayer()">Add</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="sb-handle" title="Drag to resize sidebar"></div>
+
+  <div id="mapc">
+    <div id="map"></div>
+
+    <!-- Pixel inspector panel -->
+    <div id="pxp">
+      <div class="pxhead">
+        <span class="pxtitle">Pixel Values</span>
+        <span id="pxcoord" class="pxcoord"></span>
+        <button class="pxclose" onclick="closePx()">✕</button>
+      </div>
+      <div id="pxres"></div>
+    </div>
+
+    <!-- PCA Sampler panel -->
+    <div id="sp">
+      <div class="sp-head">
+        <span class="sp-title">⬡ PCA Sampler</span>
+        <span id="sp-status">Draw polygons over different land cover types</span>
+        <button class="sp-close" onclick="closeSampler()">✕</button>
+      </div>
+      <div class="sp-body">
+        <div class="sp-sidebar">
+          <div class="sp-ctrl">
+            <label>Class name</label>
+            <input type="text" id="sp-name" placeholder="e.g. Wheat field" maxlength="30"/>
+            <div class="sp-colorrow">
+              <span class="sp-colorlbl">Color</span>
+              <input type="color" id="sp-color" class="sp-colorpick" value="#e05252"/>
+            </div>
+            <button class="sp-drawbtn" id="sp-drawbtn" onclick="startSamplerDraw()">✏ Draw polygon</button>
+          </div>
+          <div class="sp-list-wrap">
+            <div id="sp-list"><div style="font-size:10px;color:#4a5570;padding:6px 0">No classes yet</div></div>
+          </div>
+          <button class="sp-clear" onclick="clearSamples()">✕ Clear all classes</button>
+        </div>
+        <div id="sp-plot"></div>
+      </div>
+    </div>
+
+    <!-- 3D PCA explorer panel -->
+    <div id="ep">
+      <div class="ep-head">
+        <span class="ep-title">3D Embedding Space: PCA</span>
+        <span id="ep-status">Draw a rectangle over a loaded embedding tile</span>
+        <button class="ep-close" onclick="closeExplore()">✕</button>
+      </div>
+      <div id="ep-plot"></div>
+      <div class="ep-legend">
+        <span><b style="background:#e05;"></b> PC1 → Red axis</span>
+        <span><b style="background:#0b5;"></b> PC2 → Green axis</span>
+        <span><b style="background:#07f;"></b> PC3 → Blue axis</span>
+        <span style="margin-left:auto">Pan · Zoom · Rotate</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════
+const CFG = {
+  S3:     'https://s3.waw4-1.cloudferro.com',
+  BUCKET: 'worldcereal-uk-waw4-1-o2q1qptnzbki8vavzriorqk0498vwc6tqvxlzvnw5',
+  PREFIX: 'worldcereal_uk_production_embeddings_displays',
+
+  STAC_BASE: 'https://stac.openeo.vito.be',
+  STAC_COL:  'presto-embeddings-uk',
+
+  // Static catalog of finished global-production tiles (embeddings + scale COGs),
+  // generated by tools/build_production_catalog.py from the job database and
+  // published alongside the viewer (same-origin -> no CORS issue to fetch the JSON
+  // itself; loading the actual COGs still requires CORS on the S3 bucket, see
+  // CORS_SETUP.md).
+  PROD_CATALOG_URL: 'production_tiles.json',
+
+  // Optional local CORS/Range proxy (tools/cors_proxy.py) for buckets that have
+  // no CORS policy configured (e.g. worldcereal-phase2-waw4-1-embeddings).
+  // Auto-detected at startup via a health check — if it's not running, the
+  // viewer behaves exactly as before (URLs are used as-is, unchanged).
+  CORS_PROXY_HEALTH: 'http://127.0.0.1:8010/health',
+  CORS_PROXY_BASE:   'http://127.0.0.1:8010/proxy?url=',
+  // Bucket hosts known to lack CORS — only these get routed through the proxy
+  NO_CORS_HOSTS: ['worldcereal-phase2-waw4-1-embeddings'],
+
+  EMB_BANDS:  [53, 67, 75],   // 1-indexed default bands for embeddings
+  STRETCH_LO: 1,
+  STRETCH_HI: 99,
+  THUMB_W:    1024,           // initial overview width (display COGs)
+  THUMB_W_EMB: 512,          // initial overview width (embedding COGs)
+  REFRESH_DELAY: 400,         // ms debounce for zoom/pan refresh
+
+  // ── Demo pack (tools/build_demo_pack.py) ─────────────────
+  // Every layer comes from one folder: tiles.json + embeddings/ scale/ pca/ products/.
+  // ?data=<base url> points the viewer at another copy (e.g. a local offline server).
+  DEMO_BASE: (new URLSearchParams(location.search).get('data') ||
+              'https://s3.waw4-1.cloudferro.com/worldcereal-uk-waw4-1-o2q1qptnzbki8vavzriorqk0498vwc6tqvxlzvnw5/worldcereal_embeddings_demo').replace(/\/$/, ''),
+  MOSAIC_MAX_OUT: 2048,       // max canvas side for mosaic layers
+
+  // The UK display layers are replaced by mosaic layers built from the demo catalog
+  PRELOAD: [],
+  PRELOAD_STAC: [],
+
+  PROJ: {
+    3035: '+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+    3857: '+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +no_defs',
+    4326: '+proj=longlat +datum=WGS84 +no_defs',
+    32628:'+proj=utm +zone=28 +datum=WGS84 +units=m +no_defs',
+    32629:'+proj=utm +zone=29 +datum=WGS84 +units=m +no_defs',
+    32630:'+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs',
+    32631:'+proj=utm +zone=31 +datum=WGS84 +units=m +no_defs',
+    32632:'+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs',
+    32633:'+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs',
+    32634:'+proj=utm +zone=34 +datum=WGS84 +units=m +no_defs',
+    32636:'+proj=utm +zone=36 +datum=WGS84 +units=m +no_defs',
+  },
+  EXTRA_TILES: [],
+};
+
+// Build pre-load URLs
+CFG.PRELOAD.forEach(l => { if (!l.url) l.url = `${CFG.S3}/${CFG.BUCKET}/${CFG.PREFIX}/${l.path}`; });
+
+// Register projections
+Object.entries(CFG.PROJ).forEach(([c, d]) => proj4.defs(`EPSG:${c}`, d));
+proj4.defs('WGS84', CFG.PROJ[4326]);
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+const S = {
+  map: null,
+  layers: [],     // { id, name, url, type, visible, opacity, bandIndices1,
+                  //   leafletLayer, tiff, images[], projDef, epsg,
+                  //   origin, resolution, fullW, fullH, numBands,
+                  //   stretches, currentRasters, currentWindow,
+                  //   status, statusMsg, stacId, autoZoom, isRef }
+  nextId: 1,
+  stacRaw: [],
+  stacItems: [],
+  refreshTimers: {},
+  refStretch: null,   // shared 1-99% stretch from the reference embedding tile (30UXD)
+  refLayerId: null,   // layer id of the reference tile
+  prodRaw: [],        // full production tile catalog (from production_tiles.json)
+  prodItems: [],       // filtered view of prodRaw
+  proxyAvailable: false,  // set true if tools/cors_proxy.py responds to a health check
+};
+
+// ═══════════════════════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════════════════════
+function initMap() {
+  S.map = L.map('map', { center:[54.3,-2.5], zoom:7 });
+
+  // Custom pane for the explore-draw rectangle — sits above all image overlays
+  // (overlayPane = 400, markerPane = 600; we use 650 to float above everything)
+  S.map.createPane('explore-draw');
+  S.map.getPane('explore-draw').style.zIndex = 650;
+  S.map.getPane('explore-draw').style.pointerEvents = 'none';
+
+  // Esri satellite — works from file:// (no referer requirement)
+  const esri = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { attribution:'© Esri', maxZoom:19 }
+  ).addTo(S.map);
+
+  // CartoDB light — also works from file://
+  const carto = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    { attribution:'© OpenStreetMap © CARTO', maxZoom:19, subdomains:'abcd' }
+  );
+
+  // CartoDB dark — high contrast for remote sensing overlays
+  const cartoDark = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    { attribution:'© OpenStreetMap © CARTO', maxZoom:19, subdomains:'abcd' }
+  );
+
+  // OSM — may be blocked from file:// due to referer policy
+  const osm = L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { attribution:'© OpenStreetMap', maxZoom:19 }
+  );
+
+  L.control.layers(
+    { 'Esri Satellite':esri, 'CartoDB Light':carto, 'CartoDB Dark':cartoDark, 'OSM (may block file://)':osm },
+    {}, { position:'topright' }
+  ).addTo(S.map);
+
+  S.map.on('zoomend moveend', () => {
+    S.layers.forEach(l => { if (l.visible && (l.tiff || l.type === 'mosaic')) scheduleRefresh(l.id); });
+  });
+
+  S.map.on('click', onMapClick);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PROJECTION HELPERS
+// ═══════════════════════════════════════════════════════════
+function getEPSG(image) {
+  const gk = image.geoKeys || {};
+  return gk.ProjectedCSTypeGeoKey || gk.GeographicTypeGeoKey || 4326;
+}
+
+function getProjDef(epsg) {
+  const key = `EPSG:${epsg}`;
+  return proj4.defs(key) ? key : (console.warn(`Unknown EPSG:${epsg}, using LAEA 3035`), 'EPSG:3035');
+}
+
+function toWGS84(projDef, x, y) {
+  if (projDef === 'EPSG:4326' || projDef === 'WGS84') return { lat:y, lng:x };
+  const [lng, lat] = proj4(projDef, 'WGS84', [x, y]);
+  return { lat, lng };
+}
+
+function fromWGS84(projDef, lat, lng) {
+  if (projDef === 'EPSG:4326' || projDef === 'WGS84') return { x:lng, y:lat };
+  const [x, y] = proj4('WGS84', projDef, [lng, lat]);
+  return { x, y };
+}
+
+function imageBoundsWGS84(origin, resolution, w, h, projDef) {
+  const [ox, oy] = origin;
+  const [rx, ry] = resolution;
+  const sw = toWGS84(projDef, ox,          oy + h * ry);  // ry < 0 → minY
+  const ne = toWGS84(projDef, ox + w * rx, oy           );
+  return L.latLngBounds([sw.lat, sw.lng], [ne.lat, ne.lng]);
+}
+
+// ═══════════════════════════════════════════════════════════
+// OVERVIEW SELECTION
+// ═══════════════════════════════════════════════════════════
+async function buildImageList(tiff) {
+  const count = await tiff.getImageCount();
+  const list = [];
+  for (let i = 0; i < count; i++) {
+    try { list.push({ i, img: await tiff.getImage(i), w: (await tiff.getImage(i)).getWidth() }); }
+    catch(e) { break; }
+  }
+  return list.sort((a, b) => b.w - a.w); // widest first
+}
+
+function pickOverview(images, targetWidth) {
+  // Smallest image that is >= targetWidth; else the largest available
+  const over = images.filter(x => x.w >= targetWidth);
+  return over.length ? over[over.length - 1].img : images[0].img;
+}
+
+// Edge-sample a native-CRS rectangle → correct WGS84 LatLngBounds.
+// Works for any projection (LAEA, UTM, etc.) — no straight-line shortcut.
+function nativeRectToWGS84Bounds(projDef, minX, minY, maxX, maxY) {
+  const N = 12; // points per edge — plenty for any tile-sized area
+  let minLat=Infinity, maxLat=-Infinity, minLng=Infinity, maxLng=-Infinity;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const mx = minX + t*(maxX-minX);
+    const my = minY + t*(maxY-minY);
+    for (const [x,y] of [[mx,minY],[mx,maxY],[minX,my],[maxX,my]]) {
+      const p = toWGS84(projDef, x, y);
+      if (p.lat < minLat) minLat=p.lat; if (p.lat > maxLat) maxLat=p.lat;
+      if (p.lng < minLng) minLng=p.lng; if (p.lng > maxLng) maxLng=p.lng;
+    }
+  }
+  return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
+}
+
+// Full-image WGS84 extent via edge-sampling
+function computeWGS84Extent(origin, res, w, h, projDef) {
+  const [ox, oy] = origin, [rx, ry] = res;
+  const x1 = ox + w*rx, y1 = oy + h*ry;
+  return nativeRectToWGS84Bounds(projDef, Math.min(ox,x1), Math.min(oy,y1), Math.max(ox,x1), Math.max(oy,y1));
+}
+
+// ═══════════════════════════════════════════════════════════
+// MESH WARP  — on-the-fly reprojection (like QGIS "on-the-fly CRS")
+// ═══════════════════════════════════════════════════════════
+// Builds a MESH×MESH control-point grid in WGS84 output space.
+// Each grid vertex is projected to native CRS → fractional raster position.
+// Interior pixels use bilinear interpolation between control points.
+// Cost: (MESH+1)² proj4 calls + outW*outH cheap interpolations.
+function meshWarpToCanvas(rasters, rW, rH,
+                          laeaMinX, laeaMaxY, laeaMaxX, laeaMinY,
+                          projDef, wgs84Bounds, outW, outH, stretches, nodata) {
+  const MESH = 16;
+  const MW   = MESH + 1;
+  const west = wgs84Bounds.getWest(), east  = wgs84Bounds.getEast();
+  const north= wgs84Bounds.getNorth(),south = wgs84Bounds.getSouth();
+  const dLng = east - west, dLat = north - south;
+  const rSpanX = laeaMaxX - laeaMinX, rSpanY = laeaMinY - laeaMaxY; // rSpanY < 0 (south-ward)
+
+  // Build control-point mesh: fractional raster col/row for each grid vertex
+  const meshC = new Float32Array(MW * MW);
+  const meshR = new Float32Array(MW * MW);
+  for (let mj = 0; mj < MW; mj++) {
+    const lat = north - (mj / MESH) * dLat;
+    for (let mi = 0; mi < MW; mi++) {
+      const lng = west + (mi / MESH) * dLng;
+      try {
+        const [nx, ny] = proj4('WGS84', projDef, [lng, lat]);
+        meshC[mj*MW+mi] = (nx - laeaMinX) / rSpanX * rW;   // fractional col
+        meshR[mj*MW+mi] = (ny - laeaMaxY) / rSpanY * rH;   // fractional row (rSpanY<0 → row↑ as ny↓)
+      } catch(e) {
+        meshC[mj*MW+mi] = -1; meshR[mj*MW+mi] = -1;
+      }
+    }
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = outW; canvas.height = outH;
+  const ctx    = canvas.getContext('2d');
+  const imgD   = ctx.createImageData(outW, outH);
+  const d      = imgD.data;
+
+  for (let py = 0; py < outH; py++) {
+    const mj  = py / outH * MESH;
+    const mj0 = Math.min(Math.floor(mj), MESH - 1), mj1 = mj0 + 1;
+    const ty  = mj - mj0, omty = 1 - ty;
+
+    for (let px = 0; px < outW; px++) {
+      const mi  = px / outW * MESH;
+      const mi0 = Math.min(Math.floor(mi), MESH - 1), mi1 = mi0 + 1;
+      const tx  = mi - mi0, omtx = 1 - tx;
+
+      const i00=mj0*MW+mi0, i01=mj0*MW+mi1, i10=mj1*MW+mi0, i11=mj1*MW+mi1;
+      const col = meshC[i00]*omtx*omty + meshC[i01]*tx*omty + meshC[i10]*omtx*ty + meshC[i11]*tx*ty;
+      const row = meshR[i00]*omtx*omty + meshR[i01]*tx*omty + meshR[i10]*omtx*ty + meshR[i11]*tx*ty;
+
+      const c = Math.round(col), r = Math.round(row);
+      if (c < 0 || c >= rW || r < 0 || r >= rH) continue;
+
+      const ri = r * rW + c;
+      const vr = rasters[0][ri], vg = rasters[1][ri], vb = rasters[2][ri];
+      if (!isFinite(vr)||!isFinite(vg)||!isFinite(vb)||isNodataPixel(vr,vg,vb,nodata)) continue;
+
+      const oi = (py * outW + px) * 4;
+      d[oi]   = stretch(vr, stretches[0].min, stretches[0].max) ?? 0;
+      d[oi+1] = stretch(vg, stretches[1].min, stretches[1].max) ?? 0;
+      d[oi+2] = stretch(vb, stretches[2].min, stretches[2].max) ?? 0;
+      d[oi+3] = 255;
+    }
+  }
+  ctx.putImageData(imgD, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+// ═══════════════════════════════════════════════════════════
+// PERCENTILE STRETCH
+// ═══════════════════════════════════════════════════════════
+function computePercentile(arr, pLo, pHi, nodata) {
+  const step = Math.max(1, Math.floor(arr.length / 100000));
+  const vals = [];
+  for (let i = 0; i < arr.length; i += step) {
+    const v = arr[i];
+    if (!isFinite(v) || isNaN(v) || v === 0) continue;
+    // ↓↓ Skip nodata value (e.g. 255 for sea/background pixels) ↓↓
+    if (nodata !== null && nodata !== undefined && v === nodata) continue;
+    vals.push(v);
+  }
+  if (!vals.length) return { min: 0, max: 1 };
+  vals.sort((a, b) => a - b);
+  const lo = Math.max(0, Math.floor(pLo / 100 * vals.length));
+  const hi = Math.min(vals.length - 1, Math.ceil(pHi / 100 * vals.length) - 1);
+  const mn = vals[lo], mx = vals[hi];
+  return { min: mn, max: mx === mn ? mn + 1 : mx };
+}
+
+function stretch(v, mn, mx) {
+  if (v == null || isNaN(v) || !isFinite(v)) return null;
+  return Math.max(0, Math.min(255, Math.round((v - mn) / (mx - mn) * 255)));
+}
+
+// ═══════════════════════════════════════════════════════════
+// CANVAS RENDERING
+// ═══════════════════════════════════════════════════════════
+function isNodataPixel(vr, vg, vb, nodata) {
+  // If the GeoTIFF declares a nodata value, treat any pixel where ALL bands
+  // match it as transparent (nodata=255 is common for UK OIF mosaics).
+  // Fall back to the all-zeros convention when no nodata is declared.
+  if (nodata !== null && nodata !== undefined) {
+    return vr === nodata && vg === nodata && vb === nodata;
+  }
+  return vr === 0 && vg === 0 && vb === 0;
+}
+
+function rastersToDataURL(rR, rG, rB, w, h, sR, sG, sB, nodata) {
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  const d = img.data;
+
+  for (let i = 0; i < w * h; i++) {
+    const vr = rR[i], vg = rG[i], vb = rB[i];
+    if (!isFinite(vr) || !isFinite(vg) || !isFinite(vb) || isNodataPixel(vr, vg, vb, nodata)) {
+      d[i*4+3] = 0; continue;
+    }
+    d[i*4+0] = stretch(vr, sR.min, sR.max) ?? 0;
+    d[i*4+1] = stretch(vg, sG.min, sG.max) ?? 0;
+    d[i*4+2] = stretch(vb, sB.min, sB.max) ?? 0;
+    d[i*4+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+// ═══════════════════════════════════════════════════════════
+// COG LOADER  (initial thumbnail + setup)
+// ═══════════════════════════════════════════════════════════
+async function loadCOG(layerId) {
+  const layer = getLayer(layerId);
+  if (!layer) return;
+  if (layer.type === 'mosaic') return loadMosaic(layerId);
+
+  const bands0 = layer.bandIndices1.map(b => b - 1);
+  const thumbW  = layer.type === 'embed' ? CFG.THUMB_W_EMB : CFG.THUMB_W;
+
+  setStatus(layerId, 'load', 'Opening COG…');
+  let tiff, images;
+  try {
+    tiff   = await GeoTIFF.fromUrl(resolveUrl(layer.url), { allowFullFile: false });
+    images = await buildImageList(tiff);
+  } catch(err) { handleErr(layerId, err); return; }
+
+  const fullImg = images[0].img;   // widest = full resolution
+  const epsg    = getEPSG(fullImg);
+  const projDef = getProjDef(epsg);
+  const origin  = fullImg.getOrigin();
+  const res     = fullImg.getResolution();
+  const fullW   = fullImg.getWidth();
+  const fullH   = fullImg.getHeight();
+  const numBands= fullImg.getSamplesPerPixel();
+  const nodata  = fullImg.getGDALNoData();   // null if not set; e.g. 255 for UK OIF mosaics
+
+  // Full-extent WGS84 bounds via edge-sampling (gives correct initial placement)
+  let fullBounds;
+  try { fullBounds = computeWGS84Extent(origin, res, fullW, fullH, projDef); }
+  catch(e) { handleErr(layerId, new Error(`Projection EPSG:${epsg}: ${e.message}`)); return; }
+
+  // Store core metadata now so zoom/pan refresh can run concurrently
+  updateLayer(layerId, { tiff, images, projDef, epsg, origin, res, fullW, fullH, numBands, fullBounds, nodata });
+
+  setStatus(layerId, 'load', `Fetching overview (bands ${bands0.map(b=>b+1).join('/')})…`);
+
+  // Pick overview for initial thumbnail
+  const ovImg = pickOverview(images, thumbW);
+  const ovW   = ovImg.getWidth();
+  const ovH   = ovImg.getHeight();
+  const outW  = Math.min(thumbW, ovW);
+  const outH  = Math.round(ovH * outW / ovW);
+
+  let rasters;
+  try {
+    rasters = await ovImg.readRasters({ samples: bands0, width: outW, height: outH, interleave: false, fillValue: 0 });
+  } catch(err) { handleErr(layerId, err); return; }
+
+  setStatus(layerId, 'load', 'Computing stretch…');
+  let stretches;
+  if (layer.isRef) {
+    // Reference tile — compute and publish shared stretch
+    stretches = [0,1,2].map(i => computePercentile(Array.from(rasters[i]), CFG.STRETCH_LO, CFG.STRETCH_HI, nodata));
+    S.refStretch = stretches;
+    S.refLayerId = layerId;
+  } else if (!layer.useOwnStretch && (layer.type === 'embed' || layer.numBands > 3) && S.refStretch) {
+    // Use shared ref stretch (default for all embed layers until user requests own)
+    stretches = S.refStretch;
+  } else {
+    // Own per-layer stretch — user changed bands or explicitly requested recompute
+    stretches = [0,1,2].map(i => computePercentile(Array.from(rasters[i]), CFG.STRETCH_LO, CFG.STRETCH_HI, nodata));
+  }
+
+  setStatus(layerId, 'load', 'Rendering…');
+  const dataURL = rastersToDataURL(rasters[0], rasters[1], rasters[2], outW, outH, stretches[0], stretches[1], stretches[2], nodata);
+
+  const leafletLayer = L.imageOverlay(dataURL, fullBounds, { opacity: layer.opacity, interactive: false });
+  if (layer.visible) leafletLayer.addTo(S.map);
+
+  if (layer.visible && layer.autoZoom !== false) S.map.fitBounds(fullBounds, { padding:[20,20] });
+
+  const coarseWindow = [0, 0, fullW, fullH];
+  updateLayer(layerId, {
+    leafletLayer, stretches,
+    currentRasters: [rasters[0], rasters[1], rasters[2]],
+    currentWindow:  coarseWindow,
+    currentOutW: outW, currentOutH: outH,
+    status: 'ok',
+    statusMsg: `${fullW}×${fullH}px • EPSG:${epsg} • ${numBands} bands`,
+  });
+  renderLists();
+
+  // Immediately try a viewport refresh for the current zoom level
+  scheduleRefresh(layerId);
+}
+
+// ═══════════════════════════════════════════════════════════
+// VIEWPORT-ADAPTIVE REFRESH  (called on zoom/pan)
+// ═══════════════════════════════════════════════════════════
+function scheduleRefresh(layerId) {
+  clearTimeout(S.refreshTimers[layerId]);
+  S.refreshTimers[layerId] = setTimeout(() => refreshViewport(layerId), CFG.REFRESH_DELAY);
+}
+
+async function refreshViewport(layerId) {
+  const layer = getLayer(layerId);
+  if (layer?.type === 'mosaic') return refreshMosaic(layerId);
+  if (!layer?.tiff || !layer.visible || !layer.leafletLayer) return;
+
+  const { images, projDef, epsg, origin, res, fullW, fullH, stretches, bandIndices1 } = layer;
+  const bands0 = bandIndices1.map(b => b - 1);
+  const [ox, oy] = origin;
+  const [rx, ry] = res;
+  const mb    = S.map.getBounds();
+  const msize = S.map.getSize();
+  const dpr   = window.devicePixelRatio || 1;
+
+  // Mesh-warp non-geographic projected CRS (LAEA, UTM, etc.)
+  // EPSG:3857 (Web Mercator) gets direct 2-corner placement — it matches Leaflet's
+  // internal projection exactly, so no warping is needed or helpful.
+  const needsWarp = epsg !== 4326 && epsg !== 3857;
+
+  // COG native extent
+  const cogMinX = Math.min(ox, ox + fullW * rx), cogMaxX = Math.max(ox, ox + fullW * rx);
+  const cogMinY = Math.min(oy, oy + fullH * ry), cogMaxY = Math.max(oy, oy + fullH * ry);
+
+  // Viewport extent in native CRS — sample 8 points (corners + edge midpoints)
+  // for a safe bounding box even in curved projections
+  const midLat = (mb.getSouth() + mb.getNorth()) / 2;
+  const midLng = (mb.getWest()  + mb.getEast())  / 2;
+  let vMinX=Infinity, vMaxX=-Infinity, vMinY=Infinity, vMaxY=-Infinity;
+  for (const [la, ln] of [
+    [mb.getSouth(), mb.getWest()], [mb.getSouth(), mb.getEast()],
+    [mb.getNorth(), mb.getWest()], [mb.getNorth(), mb.getEast()],
+    [midLat, mb.getWest()],        [midLat, mb.getEast()],
+    [mb.getSouth(), midLng],       [mb.getNorth(), midLng],
+  ]) {
+    try {
+      const {x, y} = fromWGS84(projDef, la, ln);
+      if (x<vMinX) vMinX=x; if (x>vMaxX) vMaxX=x;
+      if (y<vMinY) vMinY=y; if (y>vMaxY) vMaxY=y;
+    } catch(e) {}
+  }
+
+  const cMinX = Math.max(vMinX, cogMinX), cMaxX = Math.min(vMaxX, cogMaxX);
+  const cMinY = Math.max(vMinY, cogMinY), cMaxY = Math.min(vMaxY, cogMaxY);
+  if (cMinX >= cMaxX || cMinY >= cMaxY) return;
+
+  // → pixel window in full-res COG
+  const colMin = Math.max(0, Math.floor((cMinX - ox) / rx));
+  const colMax = Math.min(fullW, Math.ceil ((cMaxX - ox) / rx));
+  const rowMin = Math.max(0, Math.floor((cMaxY - oy) / ry));
+  const rowMax = Math.min(fullH, Math.ceil ((cMinY - oy) / ry));
+  if (colMin >= colMax || rowMin >= rowMax) return;
+
+  const nativeCols = colMax - colMin, nativeRows = rowMax - rowMin;
+  const outW = Math.min(Math.round(msize.x * dpr), 2048);
+  const outH = Math.min(Math.round(msize.y * dpr), 2048);
+
+  const ovImg = pickOverview(images, Math.min(Math.round(outW * fullW / nativeCols), fullW));
+  const scale = fullW / ovImg.getWidth();
+  const ovColMin = Math.max(0, Math.floor(colMin / scale));
+  const ovColMax = Math.min(ovImg.getWidth(),  Math.ceil(colMax / scale));
+  const ovRowMin = Math.max(0, Math.floor(rowMin / scale));
+  const ovRowMax = Math.min(ovImg.getHeight(), Math.ceil(rowMax / scale));
+
+  setStatus(layerId, 'load', needsWarp ? 'Warping…' : 'Reading…');
+  let rasters;
+  try {
+    rasters = await ovImg.readRasters({
+      window: [ovColMin, ovRowMin, ovColMax, ovRowMax],
+      samples: bands0, width: outW, height: outH,
+      interleave: false, fillValue: 0,
+    });
+  } catch(err) {
+    setStatus(layerId, 'ok', layer.statusMsg);
+    console.warn('[refresh]', err.message);
+    return;
+  }
+
+  let dataURL, newBounds;
+
+  if (needsWarp) {
+    // ── Mesh-based on-the-fly reprojection (LAEA, UTM, any projected CRS) ───
+    // Native-CRS extent of the sub-raster window that was read
+    const nMinX = ox + colMin * rx;   // west  edge in native CRS
+    const nMaxY = oy + rowMin * ry;   // north edge (ry<0, rowMin small)
+    const nMaxX = ox + colMax * rx;   // east  edge
+    const nMinY = oy + rowMax * ry;   // south edge
+
+    // Output covers the WGS84 viewport; overlay pinned to viewport → no drift
+    newBounds = mb;
+    dataURL   = meshWarpToCanvas(
+      [rasters[0], rasters[1], rasters[2]], outW, outH,
+      nMinX, nMaxY, nMaxX, nMinY,
+      projDef, newBounds, outW, outH, stretches, layer.nodata
+    );
+  } else {
+    // ── EPSG:3857 / WGS84: direct 2-corner placement — no warp needed ───────
+    // Convert the actual data window corners (native CRS) back to WGS84.
+    // Must use the real data bounds, not the viewport (mb), so the image isn't
+    // incorrectly stretched when the COG doesn't cover the full viewport.
+    const tileSW = toWGS84(projDef, cMinX, cMinY);
+    const tileNE = toWGS84(projDef, cMaxX, cMaxY);
+    newBounds = L.latLngBounds([tileSW.lat, tileSW.lng], [tileNE.lat, tileNE.lng]);
+    dataURL   = rastersToDataURL(rasters[0], rasters[1], rasters[2], outW, outH, stretches[0], stretches[1], stretches[2], layer.nodata);
+  }
+
+  layer.leafletLayer.setUrl(dataURL);
+  layer.leafletLayer.setBounds(newBounds);
+
+  updateLayer(layerId, {
+    currentRasters: [rasters[0], rasters[1], rasters[2]],
+    currentWindow:  [colMin, rowMin, colMax, rowMax],
+    currentOutW: outW, currentOutH: outH,
+    status: 'ok',
+    statusMsg: `${nativeCols}×${nativeRows}px ${needsWarp?'warped':epsg===3857?'mercator':'window'} • EPSG:${epsg}`,
+  });
+  renderLists();
+}
+
+// ═══════════════════════════════════════════════════════════
+// RELOAD BANDS (for embedding layers)
+// ═══════════════════════════════════════════════════════════
+async function reloadBands(layerId) {
+  const layer = getLayer(layerId);
+  if (!layer) return;
+  const r = parseInt(document.getElementById(`br-${layerId}`)?.value);
+  const g = parseInt(document.getElementById(`bg-${layerId}`)?.value);
+  const b = parseInt(document.getElementById(`bb-${layerId}`)?.value);
+  if ([r,g,b].some(v => isNaN(v) || v < 1)) { alert('Band numbers must be ≥ 1'); return; }
+  if (layer.numBands && [r,g,b].some(v => v > layer.numBands)) { alert(`Band numbers must be ≤ ${layer.numBands}`); return; }
+
+  if (layer.leafletLayer) S.map.removeLayer(layer.leafletLayer);
+  // Changing bands → always compute own stretch for the new combo (not shared ref)
+  updateLayer(layerId, { leafletLayer:null, bandIndices1:[r,g,b], autoZoom:false,
+                         tiff:null, images:null, useOwnStretch: true });
+  await loadCOG(layerId);
+}
+
+// ═══════════════════════════════════════════════════════════
+// LAYER STATE
+// ═══════════════════════════════════════════════════════════
+function mkLayer(name, url, type) {
+  return {
+    id: S.nextId++, name, url, type,
+    visible: true, opacity: 1,
+    bandIndices1: type === 'embed' ? [...CFG.EMB_BANDS] : [1,2,3],
+    autoZoom: true,
+    isRef: false,
+    useOwnStretch: false,   // true = per-layer percentile; false = use S.refStretch when available
+    leafletLayer: null, tiff: null, images: null,
+    projDef: null, epsg: null, origin: null, res: null,
+    fullW: 0, fullH: 0, numBands: 0,
+    fullBounds: null, stretches: null,
+    currentRasters: null, currentWindow: null, currentOutW: 0, currentOutH: 0,
+    stacId: null,
+    status: 'load', statusMsg: 'Queued…',
+  };
+}
+function getLayer(id) { return S.layers.find(l => l.id === id); }
+function updateLayer(id, patch) { const l=getLayer(id); if(l) Object.assign(l, patch); }
+function setStatus(id, s, msg) { updateLayer(id, {status:s, statusMsg:msg}); renderLists(); }
+
+// Recompute 1-99% percentile stretch from the currently cached rasters
+// (instant — no network request). Marks the layer as "own" stretch.
+function restretchLayer(id) {
+  const l = getLayer(id);
+  if (!l?.currentRasters) return;
+  const stretches = [0,1,2].map(i =>
+    computePercentile(Array.from(l.currentRasters[i]), CFG.STRETCH_LO, CFG.STRETCH_HI, l.nodata)
+  );
+  updateLayer(id, { stretches, useOwnStretch: true });
+  // If this IS the ref layer, also update the shared pool so future tiles inherit it
+  if (l.isRef) S.refStretch = stretches;
+  scheduleRefresh(id);
+  renderLists();
+}
+
+// Switch a layer back to the shared reference stretch (e.g. after experimenting)
+function useRefStretch(id) {
+  if (!S.refStretch) return;
+  updateLayer(id, { stretches: S.refStretch, useOwnStretch: false });
+  scheduleRefresh(id);
+  renderLists();
+}
+
+function removeLayer(id) {
+  const l = getLayer(id);
+  if (l?.leafletLayer) S.map.removeLayer(l.leafletLayer);
+  clearTimeout(S.refreshTimers[id]);
+  S.layers = S.layers.filter(x => x.id !== id);
+  renderLists(); renderSTAC();
+}
+
+function toggleVis(id) {
+  const l = getLayer(id); if (!l?.leafletLayer) return;
+  l.visible = !l.visible;
+  if (l.visible) {
+    l.leafletLayer.addTo(S.map);
+    if (l.tiff || l.type === 'mosaic') scheduleRefresh(id);  // re-render at current zoom/position
+  } else {
+    S.map.removeLayer(l.leafletLayer);
+  }
+  renderLists();
+}
+
+function setOpacity(id, v) {
+  const l = getLayer(id); if (!l) return;
+  l.opacity = parseFloat(v);
+  l.leafletLayer?.setOpacity?.(l.opacity);
+}
+
+// Buckets known to be missing a CORS policy (see CORS_SETUP.md) — used to give
+// a specific, actionable message instead of the browser's generic
+// "Failed to fetch" when this happens.
+const NO_CORS_BUCKETS = CFG.NO_CORS_HOSTS;
+
+// If a local CORS/Range proxy (tools/cors_proxy.py) is running, route requests
+// to known no-CORS buckets through it. Otherwise return the URL unchanged —
+// this is the only call site that ever touches the URL used to fetch a COG,
+// so when the proxy isn't running behaviour is byte-for-byte identical to
+// before this feature existed.
+function resolveUrl(url) {
+  if (S.proxyAvailable && NO_CORS_BUCKETS.some(b => url.includes(b))) {
+    return CFG.CORS_PROXY_BASE + encodeURIComponent(url);
+  }
+  return url;
+}
+
+// Best-effort, non-blocking health check for the local proxy. Runs once at
+// startup; if it fails or times out, S.proxyAvailable simply stays false.
+async function detectCorsProxy() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 800);
+    const res = await fetch(CFG.CORS_PROXY_HEALTH, { signal: ctrl.signal });
+    clearTimeout(t);
+    S.proxyAvailable = res.ok;
+  } catch(e) {
+    S.proxyAvailable = false;
+  }
+  console.log(S.proxyAvailable
+    ? '[cors-proxy] detected — no-CORS buckets will be routed through it'
+    : '[cors-proxy] not running (tools/cors_proxy.py) — no-CORS buckets will fail to load until it is started, or CORS is enabled server-side');
+  const statusEl = document.getElementById('proxy-status');
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = S.proxyAvailable
+      ? '🟢 Local CORS proxy active — global production tiles will load'
+      : '⚪ Local CORS proxy not detected — run <code>python tools/cors_proxy.py</code> to load global production tiles';
+  }
+}
+
+function handleErr(id, err) {
+  let msg = (err?.message || String(err)).slice(0, 150);
+  const cors = /fetch|CORS|network|NetworkError|blocked/i.test(msg);
+  const layer = getLayer(id);
+  const knownBucket = layer && NO_CORS_BUCKETS.some(b => layer.url.includes(b));
+  if (cors) {
+    document.getElementById('cwarn').style.display = 'block';
+    const detailEl = document.getElementById('cwarn-detail');
+    if (knownBucket && !S.proxyAvailable) {
+      detailEl.innerHTML = '<b>This bucket has no CORS policy.</b> Start the local proxy to fix this ' +
+        'without waiting on infra:<br><code>python tools/cors_proxy.py</code> ' +
+        '(or <code>uvicorn tools.cors_proxy:app --port 8010</code>), then reload this page. ' +
+        'See <code>CORS_SETUP.md</code> for details. Raw headers needed if fixed server-side instead:';
+      msg = 'No CORS on this bucket — start tools/cors_proxy.py (see CORS_SETUP.md)';
+    } else if (knownBucket) {
+      detailEl.innerHTML = 'Proxy is running but the request still failed — check the proxy terminal output. Raw headers needed if fixed server-side instead:';
+    } else if (detailEl) {
+      detailEl.textContent = 'The S3 bucket needs these CORS headers:';
+    }
+  }
+  setStatus(id, 'err', msg);
+  renderLists();
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER UI LISTS
+// ═══════════════════════════════════════════════════════════
+function syncLayerOrder() {
+  // Sidebar order: Display layers first, then Embedding layers.
+  // Within each group, order matches S.layers insertion order.
+  // First in sidebar = top of visual stack = highest z-index.
+  const ordered = [
+    ...S.layers.filter(l => l.type !== 'embed'),
+    ...S.layers.filter(l => l.type === 'embed'),
+  ];
+  const base = 300;
+  ordered.forEach((l, i) => {
+    if (l.leafletLayer) {
+      // setZIndex works on L.ImageOverlay in Leaflet ≥ 1.6
+      if (typeof l.leafletLayer.setZIndex === 'function') {
+        l.leafletLayer.setZIndex(base - i);
+      } else if (l.leafletLayer.getElement?.()) {
+        // Fallback: set CSS directly
+        l.leafletLayer.getElement().style.zIndex = base - i;
+      }
+    }
+  });
+}
+
+function renderLists() {
+  const disp  = S.layers.filter(l => l.type !== 'embed');
+  const embed = S.layers.filter(l => l.type === 'embed');
+
+  document.getElementById('cnt-d').textContent = disp.length;
+  document.getElementById('cnt-e').textContent = embed.length;
+  document.getElementById('cnt-d').className = 'sbadge ' + (disp.length  ? 'bok' : '');
+  document.getElementById('cnt-e').className = 'sbadge ' + (embed.length ? 'bok' : '');
+
+  renderGroup('ld', disp);
+  renderGroup('le', embed);
+
+  // Keep Leaflet layer z-order in sync with sidebar order
+  syncLayerOrder();
+}
+
+function renderGroup(cid, layers) {
+  const el = document.getElementById(cid);
+  if (!layers.length) { el.innerHTML = '<div class="empty">None loaded</div>'; return; }
+  el.innerHTML = layers.map(l => {
+    const cc = l.status==='ok'&&l.visible?'vis':l.status==='err'?'err':l.status==='load'?'load':'';
+    const sc = {ok:'sok',load:'sload',err:'serr'}[l.status]||'sload';
+    const sp = l.status==='load'?'<span class="spin"></span>':'';
+    const pill = l.isRef?'pemb':l.type==='mosaic'?'prgb':l.type==='display'?'prgb':l.type==='embed'?'pemb':'pcust';
+    const ptxt = l.isRef?'REF':l.type==='mosaic'?(l.style?.kind==='rgb'?'PCA':'MAP'):l.type==='display'?'RGB':l.type==='embed'?'128B':'CUST';
+    const da   = l.status!=='ok'?'disabled':'';
+    const op   = Math.round(l.opacity*100);
+    const bi   = l.bandIndices1||[1,2,3];
+    const showBands = l.type === 'embed' || (l.type !== 'mosaic' && l.numBands > 3);
+    const maxBand   = l.numBands || 128;
+    // Stretch mode label
+    const strModeTxt = l.isRef
+      ? 'Stretch: <b>ref source</b>'
+      : (l.useOwnStretch || !S.refStretch)
+        ? 'Stretch: <b>own (per-layer)</b>'
+        : 'Stretch: <b>ref (shared)</b>';
+    const canRestretch = l.status === 'ok' && !!l.currentRasters;
+    const brow = showBands ? `
+      <div class="brow">
+        <label>R/G/B:</label>
+        <input class="binp" id="br-${l.id}" type="number" min="1" max="${maxBand}" value="${bi[0]}">
+        <input class="binp" id="bg-${l.id}" type="number" min="1" max="${maxBand}" value="${bi[1]}">
+        <input class="binp" id="bb-${l.id}" type="number" min="1" max="${maxBand}" value="${bi[2]}">
+        <button class="bxs" onclick="reloadBands(${l.id})" ${da}>Apply</button>
+      </div>
+      <div class="strow">
+        <span class="stmode">${strModeTxt}</span>
+        <button class="bxs" onclick="restretchLayer(${l.id})"
+          ${canRestretch?'':'disabled'}
+          title="Recompute 1–99% stretch from current viewport data">↺ Recompute</button>
+        ${!l.isRef && S.refStretch && l.useOwnStretch ? `
+        <button class="bxs bxs-ref" onclick="useRefStretch(${l.id})"
+          title="Switch back to shared 30UXD reference stretch">← Use ref</button>` : ''}
+        ${l.type === 'embed' ? `
+        <a class="bxs bxs-dl" href="${esc(l.url)}" target="_blank" download
+          title="Download raw COG tile (128-band GeoTIFF)">⬇ COG</a>` : ''}
+      </div>` : '';
+    return `
+<div class="lcard ${cc}">
+  <div class="lrow">
+    <input class="lchk" type="checkbox" ${l.visible?'checked':''} ${da} onchange="toggleVis(${l.id})">
+    <span class="lname" title="${esc(l.name)}">${esc(l.name)}</span>
+    <span class="lpill ${pill}">${ptxt}</span>
+    <button class="ldel" onclick="removeLayer(${l.id})">✕</button>
+  </div>
+  <div class="loprow">
+    <label>Opacity</label>
+    <input type="range" min="0" max="1" step="0.05" value="${l.opacity}" ${da}
+      oninput="setOpacity(${l.id},this.value);this.nextElementSibling.textContent=Math.round(this.value*100)+'%'">
+    <span>${op}%</span>
+  </div>
+  ${brow}
+  ${l.type==='mosaic' ? mosaicLegendHTML(l) : ''}
+  <div class="lstat ${sc}">${sp}${esc(l.statusMsg)}</div>
+</div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// STAC
+// ═══════════════════════════════════════════════════════════
+async function fetchSTAC() {
+  const btn = document.getElementById('stbtn');
+  btn.textContent='…'; btn.disabled=true;
+  try {
+    const cat = await loadCatalog();
+    // One synthetic STAC-like item per demo tile: assets.data = its 128-band embeddings COG
+    S.stacRaw = cat.tiles.map(t => ({ id: t.s2_tile, _tile: t,
+      assets: { data: { href: demoUrl(t.embeddings), type: 'image/tiff; application=geotiff' } } }));
+    S.stacItems = [...S.stacRaw];
+    document.getElementById('cnt-tiles').textContent = S.stacRaw.length;
+    document.getElementById('cnt-tiles').className = 'sbadge bok';
+    renderSTAC();
+  } catch(e) {
+    document.getElementById('stlist').innerHTML=`<div class="empty" style="color:#c0392b">Error: ${esc(e.message)}</div>`;
+  }
+  btn.textContent='Reload'; btn.disabled=false;
+}
+
+function filterSTAC() {
+  const q = document.getElementById('stfil').value.toLowerCase();
+  S.stacItems = q ? S.stacRaw.filter(i=>i.id.toLowerCase().includes(q)) : [...S.stacRaw];
+  renderSTAC();
+}
+
+function renderSTAC() {
+  const el = document.getElementById('stlist');
+  if (!S.stacItems.length) { el.innerHTML='<div class="empty">No items</div>'; return; }
+  el.innerHTML = S.stacItems.map(item => {
+    const loaded = S.layers.some(l=>l.stacId===item.id);
+    return `<div class="sti ${loaded?'loaded':''}" onclick="loadSTACItem('${esc(item.id)}')">
+      <span class="stiname">${esc(item.id)}</span>
+      ${loaded?'<span style="color:#4a6;font-size:11px;font-weight:700">✓</span>':'<span style="color:#3a7bd5;font-size:17px;line-height:1">+</span>'}
+    </div>`;
+  }).join('');
+}
+
+async function loadSTACItem(itemId) {
+  if (S.layers.some(l => l.stacId === itemId)) return;   // already loaded
+  // Demo catalog tiles
+  const demo = S.stacRaw.find(i => i.id === itemId && i._tile);
+  if (demo) {
+    const layer = mkLayer(`${itemId} embeddings`, demo.assets.data.href, 'embed');
+    layer.stacId = itemId;
+    layer.autoZoom = false;
+    S.layers.push(layer);
+    renderLists(); renderSTAC();
+    await loadCOG(layer.id);
+    return;
+  }
+  try {
+    const res = await fetch(`${CFG.STAC_BASE}/collections/${CFG.STAC_COL}/items/${encodeURIComponent(itemId)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const item = await res.json();
+    const assets = item.assets || {};
+    const keys   = Object.keys(assets);
+    const key    = keys.find(k=>k==='data'||k==='embeddings'||k==='cog')
+                || keys.find(k=>(assets[k].type||'').includes('tiff'))
+                || keys[0];
+    if (!key) throw new Error('No COG asset found in STAC item');
+    const href = assets[key].href;
+    const url  = href.startsWith('http') ? href
+               : new URL(href, `${CFG.STAC_BASE}/collections/${CFG.STAC_COL}/items/${itemId}`).href;
+
+    const layer = mkLayer(itemId, url, 'embed');
+    layer.stacId = itemId;
+    S.layers.push(layer);
+    renderLists(); renderSTAC();
+    await loadCOG(layer.id);
+  } catch(e) { alert(`Failed to load "${itemId}": ${e.message}`); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// GLOBAL PRODUCTION TILE CATALOG (embeddings + scale)
+// ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// DEMO CATALOG (tiles.json written by tools/build_demo_pack.py)
+// ═══════════════════════════════════════════════════════════
+function demoUrl(rel) { return `${CFG.DEMO_BASE}/${rel}`; }
+
+async function loadCatalog() {
+  if (S.catalog) return S.catalog;
+  const res = await fetch(`${demoUrl('tiles.json')}?_=${Date.now()}`);
+  if (!res.ok) throw new Error(`tiles.json: HTTP ${res.status}`);
+  S.catalog = await res.json();
+  return S.catalog;
+}
+
+// Colours: WorldCereal crop palette (same as the EU production dashboard), keyed by class name
+const WC_CLASS_COLORS = {
+  wheat:[188,143,10], barley:[33,150,243], rye:[198,40,40], oats:[171,71,188], maize:[255,214,0],
+  rice:[144,202,249], other_temporary_crops:[78,52,46], vegetables:[56,142,60], beet:[240,0,240],
+  dry_pulses_legumes:[173,20,87], sunflower:[255,111,0], soybean:[0,210,190], rapeseed:[205,220,57],
+  fibre_crops:[74,20,140], potatoes:[161,136,127], grass_fodder_crops:[101,130,0], sorghum:[244,143,177],
+  millet:[141,60,40], no_crop:[180,180,180], cropland:[76,153,0], non_cropland:[180,180,180],
+  active:[56,142,60], inactive:[229,115,115], winter_cereal:[33,150,243], spring_cereal:[205,220,57],
+  not_declared:[200,200,200],
+};
+// classes drawn transparent by default (so the embeddings underneath stay visible)
+const WC_HIDDEN = new Set(['not_cropland', 'non_cropland', 'nodata']);
+// 0-100 ramps: probability = ColorBrewer GnBu, uncertainty = RdYlGn reversed
+const RAMP_PROB = [[247,252,240],[224,243,219],[204,235,197],[168,221,181],[123,204,196],[78,179,211],[43,140,190],[8,104,172],[8,64,129]];
+const RAMP_UNC  = [[26,152,80],[102,189,99],[166,217,106],[217,239,139],[255,255,191],[254,224,139],[253,174,97],[244,109,67],[215,48,39]];
+function rampLUT(stops) {
+  const lut = new Uint8ClampedArray(256 * 4);
+  for (let v = 0; v <= 100; v++) {
+    const f = v / 100 * (stops.length - 1), i = Math.min(Math.floor(f), stops.length - 2), t = f - i;
+    for (let c = 0; c < 3; c++) lut[v*4+c] = Math.round(stops[i][c] * (1-t) + stops[i+1][c] * t);
+    lut[v*4+3] = 255;
+  }
+  return lut;
+}
+const SEASON_LABEL = { s1: 'season 1 (winter)', s2: 'season 2 (summer)' };
+
+// Product key = file name minus "worldcereal_2024_<tile>_" and ".tif"
+function productKey(path, tile) {
+  return path.split('/').pop().replace(/\.tif$/, '').replace(new RegExp(`^worldcereal_\\d{4}_${tile}_`), '');
+}
+
+// The product menu, built from what the catalog actually contains
+function buildProductDefs(cat) {
+  const have = new Set();
+  cat.tiles.forEach(t => (t.products || []).forEach(p => have.add(productKey(p, t.s2_tile))));
+  const defs = [];
+  const add = (key, band, kind, label, group) => { if (have.has(key)) defs.push({ id:`${key}#${band}`, key, band, kind, label, group }); };
+  add('cropland', 1, 'classes', 'Cropland', 'Cropland');
+  add('cropland_probability', 1, 'prob', 'Cropland probability', 'Cropland');
+  add('cropland', 2, 'unc', 'Cropland uncertainty', 'Cropland');
+  for (const s of ['s1', 's2']) {
+    const g = `Crop type, ${SEASON_LABEL[s]}`;
+    add(`croptype_${s}`, 1, 'classes', 'Crop type', g);
+    add(`croptype_${s}`, 2, 'unc', 'Crop type uncertainty', g);
+    add(`active_cropland_${s}`, 1, 'classes', 'Active cropland', g);
+    const probs = [...have].filter(k => k.startsWith(`croptype_${s}_probability_`)).sort();
+    if (probs.length) defs.push({ id:`croptype_${s}_probability`, key:null, probKeys:probs, band:1, kind:'prob',
+                                  label:'Class probability', group:g });
+  }
+  return defs;
+}
+
+function renderProdCatalog() {
+  const el = document.getElementById('prodlist');
+  const defs = S.productDefs || [];
+  document.getElementById('cnt-prod').textContent = defs.length;
+  document.getElementById('cnt-prod').className = 'sbadge ' + (defs.length ? 'bok' : '');
+  if (!defs.length) { el.innerHTML = '<div class="empty">No products in this demo pack</div>'; return; }
+  let html = '', lastGroup = null;
+  for (const d of defs) {
+    if (d.group !== lastGroup) { html += `<div style="font-size:10px;color:#8892aa;margin:6px 0 2px">${esc(d.group)}</div>`; lastGroup = d.group; }
+    const loaded = S.layers.some(l => l.productId === d.id);
+    const pick = d.probKeys ? `<select class="typesel" id="pk-${esc(d.id)}" style="flex:1;min-width:0">${
+      d.probKeys.map(k => `<option value="${esc(k)}">${esc(k.split('_probability_')[1].replace(/_/g,' '))}</option>`).join('')}</select>` : '';
+    html += `<div class="sti" style="cursor:default;gap:6px">
+      <span class="stiname" style="flex:${pick?'0 0 auto':'1'}">${esc(d.label)}</span>${pick}
+      <button class="bxs" ${loaded && !d.probKeys ? 'disabled' : ''} onclick="addProductLayer('${esc(d.id)}')">${loaded && !d.probKeys ? '✓' : '+ Add'}</button>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+async function addProductLayer(defId) {
+  const d = (S.productDefs || []).find(x => x.id === defId);
+  if (!d) return;
+  const key = d.probKeys ? document.getElementById(`pk-${defId}`).value : d.key;
+  const cat = await loadCatalog();
+  const parts = [];
+  for (const t of cat.tiles) {
+    const p = (t.products || []).find(p => productKey(p, t.s2_tile) === key);
+    if (p) parts.push({ s2: t.s2_tile, url: demoUrl(p), bbox: t.bbox });
+  }
+  const name = d.probKeys ? `${d.group}: ${key.split('_probability_')[1].replace(/_/g,' ')} probability` : `${d.group}: ${d.label}`;
+  if (S.layers.some(l => l.name === name)) return;
+  const layer = mkMosaic(name, parts, { kind: d.kind, band: d.band });
+  layer.productId = d.id;
+  S.layers.unshift(layer);   // products on top of the PCA / embeddings
+  renderLists(); renderProdCatalog();
+  await loadCOG(layer.id);
+}
+
+// ═══════════════════════════════════════════════════════════
+// MOSAIC LAYERS — one sidebar entry and one overlay for many per-tile COGs.
+// Each refresh reads only the tiles under the viewport, from the overview that
+// matches the zoom, and warps them (UTM → screen) into a single canvas.
+// style.kind: 'rgb' (3 bands, fixed 0-254 stretch), 'classes' (band legend from the
+// file's value_semantics tag), 'prob' / 'unc' (0-100 ramps).
+// ═══════════════════════════════════════════════════════════
+function mkMosaic(name, parts, style) {
+  const l = mkLayer(name, null, 'mosaic');
+  l.parts = parts.map(p => ({ ...p }));
+  l.style = style;
+  l.numBands = style.kind === 'rgb' ? 3 : 1;
+  l.bandIndices1 = style.kind === 'rgb' ? [1,2,3] : [style.band || 1];
+  l.autoZoom = false;
+  l.hidden = new Set();      // legend classes switched off
+  return l;
+}
+
+async function openPart(p) {
+  if (p.images) return p;
+  if (!p.opening) p.opening = (async () => {
+    const tiff = await GeoTIFF.fromUrl(p.url, { allowFullFile: false });
+    const images = await buildImageList(tiff);
+    const full = images[0].img;
+    Object.assign(p, { tiff, images, epsg: getEPSG(full), origin: full.getOrigin(), res: full.getResolution(),
+                       fullW: full.getWidth(), fullH: full.getHeight(), nodata: full.getGDALNoData() });
+    p.projDef = getProjDef(p.epsg);
+    return p;
+  })();
+  return p.opening;
+}
+
+// Legend (and the LUT behind it) from band metadata of the first tile
+async function mosaicStyle(layer) {
+  const st = layer.style;
+  if (st.lut) return st;
+  if (st.kind === 'prob' || st.kind === 'unc') {
+    st.lut = rampLUT(st.kind === 'prob' ? RAMP_PROB : RAMP_UNC);
+    st.rows = [{ ramp: st.kind === 'prob' ? RAMP_PROB : RAMP_UNC, name: st.kind === 'prob' ? 'probability 0 → 100 %' : 'uncertainty 0 → 100 %' }];
+    return st;
+  }
+  if (st.kind === 'rgb') return st;
+  const p = await openPart(layer.parts[0]);
+  let sem = {};
+  try {
+    const md = await p.images[0].img.getGDALMetadata(st.band - 1);
+    sem = JSON.parse(md?.value_semantics || '{}');
+  } catch(e) { console.warn('value_semantics', e); }
+  st.lut = new Uint8ClampedArray(256 * 4);
+  st.rows = [];
+  for (const [code, nm] of Object.entries(sem).sort((a,b) => (+a[0]) - (+b[0]))) {
+    if (!/^\d+$/.test(code) || nm === 'nodata') continue;
+    const rgb = WC_CLASS_COLORS[nm] || (nm === 'not_cropland' ? [64,64,64] : [100,100,100]);
+    st.rows.push({ value: +code, name: nm, color: rgb });
+    if (WC_HIDDEN.has(nm)) layer.hidden.add(+code);
+  }
+  applyMosaicLUT(layer);
+  return st;
+}
+
+function applyMosaicLUT(layer) {
+  const st = layer.style;
+  st.lut.fill(0);
+  for (const r of st.rows) {
+    if (layer.hidden.has(r.value)) continue;
+    st.lut.set([...r.color, 255], r.value * 4);
+  }
+}
+
+function toggleMosaicClass(layerId, value) {
+  const l = getLayer(layerId); if (!l) return;
+  l.hidden.has(value) ? l.hidden.delete(value) : l.hidden.add(value);
+  applyMosaicLUT(l);
+  scheduleRefresh(layerId);
+  renderLists();
+}
+
+// Leaflet places an imageOverlay linearly in Web Mercator: rows must be linear in mercator y
+const mercY = lat => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
+const invMercY = y => (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI;
+
+async function loadMosaic(layerId) {
+  const layer = getLayer(layerId);
+  if (!layer) return;
+  setStatus(layerId, 'load', 'Reading legend…');
+  try { await mosaicStyle(layer); } catch(err) { handleErr(layerId, err); return; }
+  const b = layer.parts.reduce((acc, p) => acc.extend(L.latLngBounds([p.bbox[1], p.bbox[0]], [p.bbox[3], p.bbox[2]])),
+                               L.latLngBounds([layer.parts[0].bbox[1], layer.parts[0].bbox[0]], [layer.parts[0].bbox[3], layer.parts[0].bbox[2]]));
+  layer.fullBounds = b;
+  layer.leafletLayer = L.imageOverlay('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', b,
+                                     { opacity: layer.opacity, interactive: false });
+  if (layer.visible) layer.leafletLayer.addTo(S.map);
+  if (layer.visible && layer.autoZoom) S.map.fitBounds(b, { padding: [20, 20] });
+  setStatus(layerId, 'ok', `${layer.parts.length} tiles`);
+  refreshMosaic(layerId);
+}
+
+async function refreshMosaic(layerId) {
+  const layer = getLayer(layerId);
+  if (!layer?.leafletLayer || !layer.visible) return;
+  const token = (layer.renderToken = (layer.renderToken || 0) + 1);
+  const mb = S.map.getBounds(), msize = S.map.getSize(), dpr = window.devicePixelRatio || 1;
+  const outW = Math.min(Math.round(msize.x * dpr), CFG.MOSAIC_MAX_OUT);
+  const outH = Math.min(Math.round(msize.y * dpr), CFG.MOSAIC_MAX_OUT);
+  const W = mb.getWest(), E = mb.getEast(), yN = mercY(mb.getNorth()), yS = mercY(mb.getSouth());
+  const visible = layer.parts.filter(p => !(p.bbox[2] < W || p.bbox[0] > E || p.bbox[3] < mb.getSouth() || p.bbox[1] > mb.getNorth()));
+  if (!visible.length) { layer.leafletLayer.setBounds(mb); layer.leafletLayer.setUrl('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'); return; }
+  setStatus(layerId, 'load', `Reading ${visible.length} tile${visible.length > 1 ? 's' : ''}…`);
+
+  const st = layer.style;
+  const samples = st.kind === 'rgb' ? [0, 1, 2] : [st.band - 1];
+  const reads = await Promise.all(visible.map(async p => {
+    try {
+      await openPart(p);
+      // output pixel rectangle covered by this tile
+      const px0 = Math.max(0, Math.floor((p.bbox[0] - W) / (E - W) * outW));
+      const px1 = Math.min(outW, Math.ceil((p.bbox[2] - W) / (E - W) * outW));
+      const py0 = Math.max(0, Math.floor((yN - mercY(p.bbox[3])) / (yN - yS) * outH));
+      const py1 = Math.min(outH, Math.ceil((yN - mercY(p.bbox[1])) / (yN - yS) * outH));
+      if (px1 <= px0 || py1 <= py0) return null;
+      // native window of that rectangle (sampled on its edges)
+      let x0=Infinity, x1=-Infinity, y0=Infinity, y1=-Infinity;
+      for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) {
+        const lng = W + (px0 + (px1 - px0) * i / 8) / outW * (E - W);
+        const lat = invMercY(yN - (py0 + (py1 - py0) * j / 8) / outH * (yN - yS));
+        const [x, y] = proj4('WGS84', p.projDef, [lng, lat]);
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      }
+      const [ox, oy] = p.origin, [rx, ry] = p.res;
+      const c0 = Math.max(0, Math.floor((x0 - ox) / rx)), c1 = Math.min(p.fullW, Math.ceil((x1 - ox) / rx));
+      const r0 = Math.max(0, Math.floor((y1 - oy) / ry)), r1 = Math.min(p.fullH, Math.ceil((y0 - oy) / ry));
+      if (c1 <= c0 || r1 <= r0) return null;
+      const wantW = Math.max(1, Math.min(px1 - px0, c1 - c0)), wantH = Math.max(1, Math.min(py1 - py0, r1 - r0));
+      const ov = pickOverview(p.images, Math.min(Math.round(wantW * p.fullW / (c1 - c0)), p.fullW));
+      const f = p.fullW / ov.getWidth();
+      const win = [Math.floor(c0 / f), Math.floor(r0 / f), Math.min(ov.getWidth(), Math.ceil(c1 / f)), Math.min(ov.getHeight(), Math.ceil(r1 / f))];
+      const rw = win[2] - win[0], rh = win[3] - win[1];
+      const rasters = await ov.readRasters({ window: win, samples, interleave: false });
+      return { p, rasters, rw, rh, px0, px1, py0, py1, nx0: ox + win[0] * f * rx, ny0: oy + win[1] * f * ry, pxsz: f * rx, pysz: f * ry };
+    } catch(err) { console.warn('[mosaic]', p.s2, err.message); return null; }
+  }));
+  if (token !== layer.renderToken) return;   // a newer refresh started meanwhile
+
+  const canvas = document.createElement('canvas');
+  canvas.width = outW; canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(outW, outH), d = img.data;
+  const lut = st.lut;
+  const MESH = 8;
+  for (const r of reads) {
+    if (!r) continue;
+    const { p, rasters, rw, rh } = r;
+    const w = r.px1 - r.px0, h = r.py1 - r.py0;
+    // control mesh: output pixel → fractional raster col/row
+    const MW = MESH + 1, mC = new Float64Array(MW * MW), mR = new Float64Array(MW * MW);
+    for (let j = 0; j < MW; j++) for (let i = 0; i < MW; i++) {
+      const lng = W + (r.px0 + w * i / MESH) / outW * (E - W);
+      const lat = invMercY(yN - (r.py0 + h * j / MESH) / outH * (yN - yS));
+      const [x, y] = proj4('WGS84', p.projDef, [lng, lat]);
+      mC[j*MW+i] = (x - r.nx0) / r.pxsz; mR[j*MW+i] = (y - r.ny0) / r.pysz;
+    }
+    for (let py = 0; py < h; py++) {
+      const mj = py / h * MESH, j0 = Math.min(Math.floor(mj), MESH - 1), ty = mj - j0;
+      for (let px = 0; px < w; px++) {
+        const mi = px / w * MESH, i0 = Math.min(Math.floor(mi), MESH - 1), tx = mi - i0;
+        const a = j0*MW+i0, b = a+1, c = a+MW, e = c+1;
+        const col = Math.floor(mC[a]*(1-tx)*(1-ty) + mC[b]*tx*(1-ty) + mC[c]*(1-tx)*ty + mC[e]*tx*ty);
+        const row = Math.floor(mR[a]*(1-tx)*(1-ty) + mR[b]*tx*(1-ty) + mR[c]*(1-tx)*ty + mR[e]*tx*ty);
+        if (col < 0 || col >= rw || row < 0 || row >= rh) continue;
+        const k = row * rw + col, o = ((r.py0 + py) * outW + r.px0 + px) * 4;
+        if (st.kind === 'rgb') {
+          const v0 = rasters[0][k], v1 = rasters[1][k], v2 = rasters[2][k];
+          if (v0 === 255 && v1 === 255 && v2 === 255) continue;
+          d[o] = v0 * 255 / 254; d[o+1] = v1 * 255 / 254; d[o+2] = v2 * 255 / 254; d[o+3] = 255;
+        } else {
+          const v = rasters[0][k];
+          if (lut[v*4+3] === 0) continue;
+          d[o] = lut[v*4]; d[o+1] = lut[v*4+1]; d[o+2] = lut[v*4+2]; d[o+3] = 255;
+        }
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  layer.leafletLayer.setUrl(canvas.toDataURL('image/png'));
+  layer.leafletLayer.setBounds(mb);
+  setStatus(layerId, 'ok', `${reads.filter(Boolean).length} of ${layer.parts.length} tiles in view`);
+}
+
+// Identify on a mosaic: the full-resolution value of the tile under the click
+async function readMosaicPixel(layer, lat, lng) {
+  // bbox candidates (S2 tiles overlap), then the one whose raster really contains the point
+  const cands = layer.parts.filter(p => lng >= p.bbox[0] && lng <= p.bbox[2] && lat >= p.bbox[1] && lat <= p.bbox[3]);
+  if (!cands.length) return '';
+  try { await Promise.all(cands.map(openPart)); } catch(e) {}
+  const p = cands.find(p => { if (!p.projDef) return false; const { x, y } = fromWGS84(p.projDef, lat, lng);
+                              const c = (x - p.origin[0]) / p.res[0], r = (y - p.origin[1]) / p.res[1];
+                              return c >= 0 && r >= 0 && c < p.fullW && r < p.fullH; });
+  if (!p) return '';
+  try {
+    const { x, y } = fromWGS84(p.projDef, lat, lng);
+    const c = Math.floor((x - p.origin[0]) / p.res[0]), r = Math.floor((y - p.origin[1]) / p.res[1]);
+    if (c < 0 || r < 0 || c >= p.fullW || r >= p.fullH) return '';
+    const st = layer.style;
+    const samples = st.kind === 'rgb' ? [0,1,2] : [st.band - 1];
+    const ras = await p.images[0].img.readRasters({ window: [c, r, c+1, r+1], samples, interleave: false });
+    const v = samples.map((_, i) => ras[i][0]);
+    let txt;
+    if (st.kind === 'rgb') txt = v.every(x => x === 255) ? 'nodata' : v.map((x,i) => `<b>PC${i+1}:</b> ${x}`).join('&nbsp;&nbsp;');
+    else if (st.kind === 'classes') { const row = (st.rows || []).find(rw => rw.value === v[0]); txt = `<b>${esc(row ? row.name.replace(/_/g,' ') : (v[0] === 255 ? 'nodata' : String(v[0])))}</b> (${v[0]})`; }
+    else txt = v[0] <= 100 ? `<b>${v[0]} %</b>` : (v[0] === 254 ? 'not cropland' : 'nodata');
+    return `<div class="pxblk"><div class="pxlbl">${esc(layer.name)} <span style="color:#445;font-size:10px">(${p.s2}, full-res)</span></div>
+      <div class="pxvals">${txt}</div></div>`;
+  } catch(err) {
+    return `<div class="pxblk"><div class="pxlbl">${esc(layer.name)}</div><div class="pxvals" style="color:#c0392b">Read error: ${esc(err.message.slice(0,80))}</div></div>`;
+  }
+}
+
+function mosaicLegendHTML(l) {
+  const st = l.style;
+  if (!st?.rows?.length) return '';
+  if (st.rows[0].ramp) {
+    const g = st.rows[0].ramp.map(c => `rgb(${c.join(',')})`).join(',');
+    return `<div style="margin:4px 0 2px"><div style="height:8px;border-radius:3px;background:linear-gradient(90deg,${g})"></div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:#8892aa"><span>0</span><span>${esc(st.rows[0].name)}</span><span>100</span></div></div>`;
+  }
+  return `<div style="display:flex;flex-wrap:wrap;gap:3px 8px;margin:4px 0 2px">${st.rows.map(r => {
+    const off = l.hidden.has(r.value);
+    return `<label style="display:flex;align-items:center;gap:3px;font-size:10px;color:${off?'#556':'#c8cdd8'};cursor:pointer" title="click to show/hide">
+      <input type="checkbox" ${off?'':'checked'} style="margin:0" onchange="toggleMosaicClass(${l.id},${r.value})">
+      <span style="width:10px;height:10px;border-radius:2px;background:rgb(${r.color.join(',')})"></span>${esc(r.name.replace(/_/g,' '))}</label>`;
+  }).join('')}</div>`;
+}
+
+// Start-up: PCA mosaic + S2 outlines + product menu + tile list, all from tiles.json
+async function initDemo() {
+  const statusEl = document.getElementById('prod-status');
+  let cat;
+  try { cat = await loadCatalog(); }
+  catch(e) { statusEl.textContent = `Could not load the demo catalog (${e.message})`; statusEl.style.color = '#c0392b'; return; }
+  const n = cat.tiles.length;
+  statusEl.textContent = `${n} S2 tiles · postprocessed products, aligned pixel-for-pixel with the embeddings`;
+  S.productDefs = buildProductDefs(cat);
+  renderProdCatalog();
+  fetchSTAC();
+  const pcaParts = cat.tiles.filter(t => t.pca).map(t => ({ s2: t.s2_tile, url: demoUrl(t.pca), bbox: t.bbox }));
+  if (pcaParts.length) {
+    const pca = mkMosaic('Embeddings PCA (one model for all tiles)', pcaParts, { kind: 'rgb' });
+    pca.autoZoom = true;
+    S.layers.push(pca);
+    renderLists();
+    await loadCOG(pca.id);
+  } else if (cat.tiles.length) {
+    S.map.fitBounds(L.latLngBounds(cat.tiles.map(t => [[t.bbox[1], t.bbox[0]], [t.bbox[3], t.bbox[2]]]).flat()));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ADD CUSTOM LAYER
+// ═══════════════════════════════════════════════════════════
+async function addCustomLayer() {
+  const url  = document.getElementById('addurl').value.trim();
+  const name = document.getElementById('addname').value.trim() || url.split('/').pop().replace(/\?.*$/,'') || 'Custom';
+  const type = document.getElementById('addtype').value;
+  if (!url) { alert('Please enter a COG URL'); return; }
+  document.getElementById('addurl').value=''; document.getElementById('addname').value='';
+  const layer = mkLayer(name, url, type);
+  S.layers.push(layer);
+  renderLists();
+  await loadCOG(layer.id);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PIXEL INSPECTOR
+// ═══════════════════════════════════════════════════════════
+async function onMapClick(e) {
+  if (EX.mode || SAMPLER.mode) return;   // rectangle draw modes capture clicks instead
+  const { lat, lng } = e.latlng;
+  const active = S.layers.filter(l => l.visible && (l.type === 'mosaic' ? l.leafletLayer : (l.currentRasters && l.origin)));
+  if (!active.length) return;
+
+  document.getElementById('pxp').style.display = 'block';
+  document.getElementById('pxcoord').textContent = `${lat.toFixed(5)}°N  ${lng.toFixed(5)}°E`;
+  document.getElementById('pxres').innerHTML = '<div style="color:#c8922a;font-size:11px"><span class="spin"></span>Reading…</div>';
+
+  const blocks = await Promise.all(active.map(l => l.type === 'mosaic' ? readMosaicPixel(l, lat, lng) : readPixel(l, lat, lng)));
+  // offer the 128 bands of the tile under the click (sampler / PCA / identify need them)
+  const under = (S.stacRaw || []).find(i => i._tile && lng >= i._tile.bbox[0] && lng <= i._tile.bbox[2] && lat >= i._tile.bbox[1] && lat <= i._tile.bbox[3]
+                                          && !S.layers.some(l => l.stacId === i.id));
+  if (under) blocks.push(`<div class="pxblk"><button class="bxs" onclick="loadSTACItem('${esc(under.id)}')">+ Load 128-band embeddings of ${esc(under.id)}</button></div>`);
+  document.getElementById('pxres').innerHTML = blocks.join('') || '<div style="color:#556;font-size:11px">No data at this location</div>';
+}
+
+async function readPixel(layer, lat, lng) {
+  const { projDef, origin:[ox,oy], res:[rx,ry], fullW, fullH, bandIndices1 } = layer;
+  const bands0 = bandIndices1.map(b => b-1);
+
+  // Click → native CRS
+  const { x:nx, y:ny } = fromWGS84(projDef, lat, lng);
+
+  // Native → pixel coordinates
+  const col = Math.floor((nx - ox) / rx);
+  const row = Math.floor((ny - oy) / ry);
+
+  if (col < 0 || row < 0 || col >= fullW || row >= fullH) {
+    return `<div class="pxblk"><div class="pxlbl">${esc(layer.name)}</div>
+      <div class="pxvals" style="color:#556">Outside layer extent</div></div>`;
+  }
+
+  // — Fast path: read from cached rasters —
+  const cr = layer.currentRasters;
+  const cw = layer.currentWindow;
+  if (cr && cw) {
+    const [c0, r0, c1, r1] = cw;
+    const { currentOutW:outW, currentOutH:outH } = layer;
+    if (col >= c0 && col < c1 && row >= r0 && row < r1) {
+      // Map full-res pixel → cached raster index
+      const fracX = (col - c0) / (c1 - c0);
+      const fracY = (row - r0) / (r1 - r0);
+      const ci = Math.min(outW-1, Math.floor(fracX * outW));
+      const ri = Math.min(outH-1, Math.floor(fracY * outH));
+      const idx = ri * outW + ci;
+      const vals = bands0.map((_,i) => cr[i][idx]);
+      return fmtPixelBlock(layer, vals, '~cached');
+    }
+  }
+
+  // — Slow path: range request for exact pixel —
+  try {
+    // Use the best overview that covers this single pixel efficiently
+    const ovImg = pickOverview(layer.images, Math.min(512, layer.fullW));
+    const scale  = layer.fullW / ovImg.getWidth();
+    const ovCol  = Math.max(0, Math.floor(col  / scale));
+    const ovRow  = Math.max(0, Math.floor(row  / scale));
+    const ovC1   = Math.min(ovImg.getWidth(),  ovCol+1);
+    const ovR1   = Math.min(ovImg.getHeight(), ovRow+1);
+
+    const rasters = await ovImg.readRasters({
+      window: [ovCol, ovRow, ovC1, ovR1],
+      samples: bands0,
+      interleave: false,
+    });
+    const vals = bands0.map((_,i) => rasters[i][0]);
+    return fmtPixelBlock(layer, vals, scale > 1 ? `~${Math.round(scale)}× overview` : 'full-res');
+  } catch(err) {
+    return `<div class="pxblk"><div class="pxlbl">${esc(layer.name)}</div>
+      <div class="pxvals" style="color:#c0392b">Read error: ${esc(err.message.slice(0,80))}</div></div>`;
+  }
+}
+
+function fmtPixelBlock(layer, vals, note) {
+  const labels = vals.map((v,i) => `<b>B${layer.bandIndices1[i]}:</b> ${fmt(v)}`).join('&nbsp;&nbsp;');
+  const noteHtml = note ? `<span style="color:#445;font-size:10px"> (${note})</span>` : '';
+  return `<div class="pxblk">
+    <div class="pxlbl">${esc(layer.name)}${noteHtml}</div>
+    <div class="pxvals">${labels}</div>
+  </div>`;
+}
+
+function closePx() { document.getElementById('pxp').style.display='none'; }
+
+// ═══════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════
+function esc(s) {
+  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmt(v) {
+  if (v==null||v===undefined) return 'N/A';
+  if (!isFinite(v)) return String(v);
+  return Number.isInteger(v) ? String(v) : v.toFixed(4);
+}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+async function loadSTACPreload(cfg) {
+  // Try the given ID, then with '_embeddings' suffix, then without it
+  const base = cfg.itemId.replace(/_embeddings$/i, '');
+  const idsToTry = [cfg.itemId, base + '_embeddings', base].filter((v,i,a)=>a.indexOf(v)===i);
+
+  let item = null, usedId = null;
+  for (const tryId of idsToTry) {
+    try {
+      const res = await fetch(`${CFG.STAC_BASE}/collections/${CFG.STAC_COL}/items/${encodeURIComponent(tryId)}`);
+      if (res.ok) { item = await res.json(); usedId = tryId; break; }
+    } catch(e) {}
+  }
+  if (!item) {
+    console.warn(`[STAC preload] ${cfg.itemId}: not found (tried: ${idsToTry.join(', ')})`);
+    return;
+  }
+
+  const assets = item.assets || {};
+  const keys   = Object.keys(assets);
+  const key    = keys.find(k=>k==='data'||k==='embeddings'||k==='cog')
+               || keys.find(k=>(assets[k].type||'').includes('tiff'))
+               || keys[0];
+  if (!key) { console.warn(`[STAC preload] ${usedId}: no COG asset`); return; }
+
+  const href = assets[key].href;
+  const url  = href.startsWith('http') ? href
+             : new URL(href, `${CFG.STAC_BASE}/collections/${CFG.STAC_COL}/items/${usedId}`).href;
+
+  // isRef tiles live in Display Layers section (type:'display') but
+  // still use EMB_BANDS for band selection and act as the stretch reference.
+  const layerType = cfg.isRef ? 'display' : 'embed';
+  const layer = mkLayer(cfg.displayName || usedId, url, layerType);
+  layer.stacId       = usedId;
+  layer.autoZoom     = false;
+  layer.visible      = cfg.visible !== false;
+  layer.isRef        = cfg.isRef || false;
+  layer.bandIndices1 = [...CFG.EMB_BANDS];   // use embedding bands regardless of type
+  S.layers.push(layer);
+  renderLists(); renderSTAC();
+  await loadCOG(layer.id);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PCA SAMPLER  — multi-class shared-axis 3D scatter
+// ═══════════════════════════════════════════════════════════
+
+const SP_PALETTE = [
+  '#e05252','#52b0e0','#52e07f','#e0c852','#c052e0',
+  '#e09052','#52e0d4','#a0e052','#e052a8','#8c8ce0',
+];
+const SP_MAX  = 10;   // hard limit on number of classes
+const SP_WARN = 7;    // warning shown at this count
+
+const SAMPLER = {
+  mode:    false,   // draw mode active?
+  start:   null,    // L.LatLng drag start
+  rect:    null,    // current drawing rectangle (L.Rectangle, removed after use)
+  samples: [],      // [{name, color, pixels, pc1[], pc2[], pc3[], nPx, rect}]
+  pending: false,   // PCA computation in flight?
+};
+
+/* ── Toggle sampler panel open/closed ───────────────────── */
+function toggleSampler() {
+  const panel = document.getElementById('sp');
+  if (panel.style.display === 'flex') {
+    closeSampler();
+  } else {
+    openSampler();
+  }
+}
+
+function openSampler() {
+  if (EX.mode) _cancelExplore();   // cancel explore draw if active
+  document.getElementById('sp').style.display = 'flex';
+  document.getElementById('btn-sampler').classList.add('active');
+  document.getElementById('btn-sampler').dataset.tip =
+    'Type a class name, pick a color, then click Draw polygon';
+  // Seed color picker to first palette colour on first open
+  const cpEl = document.getElementById('sp-color');
+  if (!cpEl._seeded) { cpEl.value = SP_PALETTE[0]; cpEl._seeded = true; }
+  renderSamplerList();
+  if (SAMPLER.samples.length > 0) plotSampler();
+}
+
+function closeSampler() {
+  _cancelSamplerDraw();
+  document.getElementById('sp').style.display = 'none';
+  document.getElementById('btn-sampler').classList.remove('active');
+  document.getElementById('btn-sampler').dataset.tip =
+    'Load an embedding tile, then draw polygons over different land cover types';
+}
+
+/* ── Clean up draw listeners / state ───────────────────── */
+function _cancelSamplerDraw() {
+  S.map.off('mousedown', onSamplerDown);
+  S.map.off('mousemove', onSamplerMove);
+  S.map.dragging.enable();
+  S.map.getContainer().style.cursor = '';
+  if (SAMPLER.rect) { S.map.removeLayer(SAMPLER.rect); SAMPLER.rect = null; }
+  SAMPLER.mode  = false;
+  SAMPLER.start = null;
+  const btn = document.getElementById('sp-drawbtn');
+  if (btn) { btn.textContent = '✏ Draw polygon'; btn.classList.remove('drawing'); btn.disabled = false; }
+}
+
+/* ── Activate draw mode for next polygon ─────────────────── */
+function startSamplerDraw() {
+  if (EX.mode) _cancelExplore();       // ensure explore draw is off
+
+  // Toggle: clicking Draw again while drawing cancels it
+  if (SAMPLER.mode) { _cancelSamplerDraw(); return; }
+
+  if (SAMPLER.samples.length >= SP_MAX) {
+    setSpStatus(`⚠ Maximum ${SP_MAX} classes reached. Delete one before adding more.`);
+    return;
+  }
+
+  SAMPLER.mode = true;
+  S.map.dragging.disable();
+  S.map.getContainer().style.cursor = 'crosshair';
+  S.map.on('mousedown', onSamplerDown);
+
+  const btn = document.getElementById('sp-drawbtn');
+  if (btn) { btn.textContent = '… Click & drag on map'; btn.classList.add('drawing'); }
+}
+
+function onSamplerDown(e) {
+  SAMPLER.start = e.latlng;
+  const color = document.getElementById('sp-color')?.value || SP_PALETTE[0];
+  if (SAMPLER.rect) { S.map.removeLayer(SAMPLER.rect); SAMPLER.rect = null; }
+  SAMPLER.rect = L.rectangle([e.latlng, e.latlng], {
+    pane: 'explore-draw',
+    color: color, weight: 3, dashArray: '5,4',
+    fill: true, fillOpacity: 0.25, interactive: false,
+  }).addTo(S.map);
+  S.map.on('mousemove', onSamplerMove);
+  S.map.once('mouseup', onSamplerUp);
+  L.DomEvent.stopPropagation(e.originalEvent);
+}
+
+function onSamplerMove(e) {
+  if (!SAMPLER.rect || !SAMPLER.start) return;
+  SAMPLER.rect.setBounds(L.latLngBounds(SAMPLER.start, e.latlng));
+}
+
+async function onSamplerUp(e) {
+  S.map.off('mousemove', onSamplerMove);
+  if (!SAMPLER.rect || !SAMPLER.start) { _cancelSamplerDraw(); return; }
+
+  const bounds = L.latLngBounds(SAMPLER.start, e.latlng);
+  const latSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
+  const lngSpan = Math.abs(bounds.getEast()  - bounds.getWest());
+
+  // Detach rect from SAMPLER so next draw can start fresh
+  const rectRef = SAMPLER.rect;
+  SAMPLER.rect  = null;
+
+  // Restore map state
+  S.map.off('mousedown', onSamplerDown);
+  S.map.dragging.enable();
+  S.map.getContainer().style.cursor = '';
+  SAMPLER.mode  = false;
+  SAMPLER.start = null;
+  const btn = document.getElementById('sp-drawbtn');
+  if (btn) { btn.textContent = '✏ Draw polygon'; btn.classList.remove('drawing'); }
+
+  if (latSpan < 0.001 || lngSpan < 0.001) {
+    if (rectRef) S.map.removeLayer(rectRef);
+    setSpStatus('Rectangle too small: drag over a larger area.'); return;
+  }
+
+  // Find a visible embedding layer to read from
+  const embedLayer = S.layers.find(l =>
+    (l.type === 'embed' || (l.isRef && l.numBands > 3)) &&
+    l.visible && l.tiff && l.images
+  );
+  if (!embedLayer) {
+    if (rectRef) S.map.removeLayer(rectRef);
+    setSpStatus('⚠ No embedding tile loaded: add one from the STAC catalog first.'); return;
+  }
+
+  if (SAMPLER.pending) {
+    if (rectRef) S.map.removeLayer(rectRef);
+    setSpStatus('⚠ Still computing previous sample: please wait a moment.'); return;
+  }
+
+  // Get name + color from controls
+  const name  = document.getElementById('sp-name')?.value.trim()
+              || `Class ${SAMPLER.samples.length + 1}`;
+  const color = document.getElementById('sp-color')?.value
+              || SP_PALETTE[SAMPLER.samples.length % SP_PALETTE.length];
+
+  if (btn) btn.disabled = true;
+  setSpStatus(`Reading ${embedLayer.numBands} bands for "${name}"…`);
+  SAMPLER.pending = true;
+
+  let pixels;
+  try {
+    pixels = await readSamplerPixels(embedLayer, bounds);
+  } catch(err) {
+    setSpStatus(`⚠ Read error: ${err.message.slice(0, 80)}`);
+    SAMPLER.pending = false;
+    if (btn) btn.disabled = false;
+    if (rectRef) S.map.removeLayer(rectRef);
+    return;
+  }
+
+  if (!pixels || pixels.length < 5) {
+    setSpStatus(`⚠ Only ${pixels?.length ?? 0} valid pixels : draw a larger rectangle over the embedding tile.`);
+    SAMPLER.pending = false;
+    if (btn) btn.disabled = false;
+    if (rectRef) S.map.removeLayer(rectRef);
+    return;
+  }
+
+  // Keep rect on map as a persistent class indicator
+  SAMPLER.samples.push({ name, color, pixels, pc1:[], pc2:[], pc3:[], nPx: pixels.length, rect: rectRef });
+
+  // Advance color picker to next palette slot for convenience
+  const cpEl = document.getElementById('sp-color');
+  if (cpEl) cpEl.value = SP_PALETTE[SAMPLER.samples.length % SP_PALETTE.length];
+
+  // Clear name field ready for next class
+  const nameEl = document.getElementById('sp-name');
+  if (nameEl) nameEl.value = '';
+
+  if (SAMPLER.samples.length >= SP_WARN) {
+    setSpStatus(`⚠ ${SAMPLER.samples.length} classes : many classes can clutter the view.`);
+  }
+
+  renderSamplerList();
+  await recomputeSamplerPCA();
+  SAMPLER.pending = false;
+  if (btn) btn.disabled = false;
+}
+
+/* ── Read all N bands for a WGS84 bounding box ─────────── */
+async function readSamplerPixels(layer, wgs84Bounds) {
+  const { images, projDef, origin:[ox,oy], res:[rx,ry], fullW, fullH, numBands } = layer;
+
+  // WGS84 → native CRS
+  let xMin=Infinity, xMax=-Infinity, yMin=Infinity, yMax=-Infinity;
+  for (const [la, ln] of [
+    [wgs84Bounds.getSouth(), wgs84Bounds.getWest()],
+    [wgs84Bounds.getSouth(), wgs84Bounds.getEast()],
+    [wgs84Bounds.getNorth(), wgs84Bounds.getWest()],
+    [wgs84Bounds.getNorth(), wgs84Bounds.getEast()],
+  ]) {
+    try {
+      const {x, y} = fromWGS84(projDef, la, ln);
+      if (x<xMin) xMin=x; if (x>xMax) xMax=x;
+      if (y<yMin) yMin=y; if (y>yMax) yMax=y;
+    } catch(e) {}
+  }
+
+  const colMin = Math.max(0, Math.floor((xMin - ox) / rx));
+  const colMax = Math.min(fullW, Math.ceil ((xMax - ox) / rx));
+  const rowMin = Math.max(0, Math.floor((yMax - oy) / ry));  // north (ry<0)
+  const rowMax = Math.min(fullH, Math.ceil ((yMin - oy) / ry));  // south
+
+  if (colMin >= colMax || rowMin >= rowMax)
+    throw new Error('Rectangle is outside the embedding tile extent');
+
+  // Use an overview that gives ~48×48 px
+  const MAX_DIM = 48;
+  const nCols   = colMax - colMin, nRows = rowMax - rowMin;
+  const targetW = Math.min(Math.round(MAX_DIM * fullW / nCols), fullW);
+  const ovImg   = pickOverview(images, targetW);
+  const scale   = fullW / ovImg.getWidth();
+
+  const oColMin = Math.max(0, Math.floor(colMin / scale));
+  const oColMax = Math.min(ovImg.getWidth(),  Math.ceil(colMax / scale));
+  const oRowMin = Math.max(0, Math.floor(rowMin / scale));
+  const oRowMax = Math.min(ovImg.getHeight(), Math.ceil(rowMax / scale));
+  const oW = Math.max(1, oColMax - oColMin);
+  const oH = Math.max(1, oRowMax - oRowMin);
+
+  const bands0  = Array.from({length: numBands}, (_, i) => i);
+  const rasters = await ovImg.readRasters({
+    window: [oColMin, oRowMin, oColMax, oRowMax],
+    samples: bands0, width: oW, height: oH,
+    interleave: false, fillValue: 0,
+  });
+
+  const nd   = layer.nodata;
+  const nPx  = oW * oH;
+  const MAX_PTS = 2048;
+  const step = Math.max(1, Math.floor(nPx / MAX_PTS));
+  const pixels = [];
+
+  for (let i = 0; i < nPx; i += step) {
+    if (nd !== null && nd !== undefined) {
+      if (rasters[0][i] === nd) continue;
+    } else {
+      let allZ = true;
+      for (let b = 0; b < numBands; b++) { if (rasters[b][i] !== 0) { allZ=false; break; } }
+      if (allZ) continue;
+    }
+    const v = new Float32Array(numBands);
+    for (let b = 0; b < numBands; b++) v[b] = rasters[b][i];
+    pixels.push(v);
+  }
+  return pixels;
+}
+
+/* ── Recompute SHARED PCA across all classes, then project ── */
+async function recomputeSamplerPCA() {
+  const samples = SAMPLER.samples;
+  if (!samples.length) return;
+
+  setSpStatus('Recomputing shared PCA…');
+  await new Promise(r => setTimeout(r, 10));
+
+  // Pool every pixel from every class
+  const allPixels = [];
+  for (const s of samples) for (const px of s.pixels) allPixels.push(px);
+
+  const nDims = allPixels[0].length;
+  const pca   = computePCA3(allPixels, nDims);
+
+  // Project each class's pixels onto the shared PCA axes
+  for (const s of samples) {
+    s.pc1 = []; s.pc2 = []; s.pc3 = [];
+    for (const px of s.pixels) {
+      let c1=0, c2=0, c3=0;
+      for (let b = 0; b < nDims; b++) {
+        const c = px[b] - pca.mean[b];
+        c1 += c * pca.pc[0][b];
+        c2 += c * pca.pc[1][b];
+        c3 += c * pca.pc[2][b];
+      }
+      s.pc1.push(c1); s.pc2.push(c2); s.pc3.push(c3);
+    }
+  }
+
+  const varPct   = pca.varFrac.map(v=>(v*100).toFixed(1)+'%').join(' / ');
+  const totalPx  = samples.reduce((a,s)=>a+s.nPx, 0);
+  setSpStatus(`${samples.length} class${samples.length>1?'es':''} · ${totalPx} pts · variance: ${varPct}`);
+
+  plotSampler();
+}
+
+/* ── Plotly 3D scatter — one coloured trace per class ─────── */
+function plotSampler() {
+  const samples = SAMPLER.samples;
+  if (!samples.length) return;
+
+  const dark   = '#10111a';
+  const traces = samples.map(s => ({
+    type: 'scatter3d', mode: 'markers',
+    name: s.name,
+    x: s.pc1, y: s.pc2, z: s.pc3,
+    marker: { size: 2.5, color: s.color, opacity: 0.82 },
+    hovertemplate:
+      `<b>${esc(s.name)}</b><br>PC1:%{x:.2f}<br>PC2:%{y:.2f}<br>PC3:%{z:.2f}<extra></extra>`,
+  }));
+
+  try { Plotly.purge('sp-plot'); } catch(e) {}
+  document.getElementById('sp-plot').innerHTML = '';
+
+  Plotly.newPlot('sp-plot', traces, {
+    paper_bgcolor: dark,
+    scene: {
+      bgcolor: dark,
+      xaxis: { title:'PC1', color:'#8892aa', gridcolor:'#1e2038', zerolinecolor:'#252840' },
+      yaxis: { title:'PC2', color:'#8892aa', gridcolor:'#1e2038', zerolinecolor:'#252840' },
+      zaxis: { title:'PC3', color:'#8892aa', gridcolor:'#1e2038', zerolinecolor:'#252840' },
+    },
+    margin: { l:0, r:0, t:0, b:0 },
+    font: { color:'#8892aa', size:10 },
+    legend: {
+      x:0, y:1, xanchor:'left', yanchor:'top',
+      bgcolor:'rgba(16,17,26,.75)', bordercolor:'#252840', borderwidth:1,
+      font:{ size:10, color:'#c8d0e8' },
+    },
+    showlegend: true,
+  }, { responsive:true, displayModeBar:false }).then(() => {
+    requestAnimationFrame(() => { try { Plotly.Plots.resize('sp-plot'); } catch(e) {} });
+  });
+}
+
+/* ── Sample management ───────────────────────────────────── */
+function removeSample(i) {
+  const s = SAMPLER.samples[i];
+  if (s?.rect) try { S.map.removeLayer(s.rect); } catch(e) {}
+  SAMPLER.samples.splice(i, 1);
+  renderSamplerList();
+  if (SAMPLER.samples.length) {
+    recomputeSamplerPCA();
+  } else {
+    try { Plotly.purge('sp-plot'); } catch(e) {}
+    document.getElementById('sp-plot').innerHTML = '';
+    setSpStatus('Draw polygons over different land cover types');
+  }
+}
+
+function clearSamples() {
+  for (const s of SAMPLER.samples) {
+    if (s?.rect) try { S.map.removeLayer(s.rect); } catch(e) {}
+  }
+  SAMPLER.samples = [];
+  renderSamplerList();
+  try { Plotly.purge('sp-plot'); } catch(e) {}
+  document.getElementById('sp-plot').innerHTML = '';
+  setSpStatus('Draw polygons over different land cover types');
+}
+
+function renderSamplerList() {
+  const el = document.getElementById('sp-list');
+  if (!el) return;
+  if (!SAMPLER.samples.length) {
+    el.innerHTML = '<div style="font-size:10px;color:#4a5570;padding:6px 0">No classes yet</div>';
+    return;
+  }
+  el.innerHTML = SAMPLER.samples.map((s, i) => `
+    <div class="sp-item">
+      <span class="sp-swatch" style="background:${s.color}"></span>
+      <span class="sp-item-name" title="${esc(s.name)}">${esc(s.name)}</span>
+      <span class="sp-item-count">${s.nPx}px</span>
+      <button class="sp-item-del" onclick="removeSample(${i})" title="Remove this class">✕</button>
+    </div>`).join('');
+}
+
+function setSpStatus(msg) {
+  const el = document.getElementById('sp-status');
+  if (el) el.textContent = msg;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 3-D EMBEDDING EXPLORER
+// ═══════════════════════════════════════════════════════════
+
+// Explore state — kept separate from S to stay tidy
+const EX = {
+  mode:  false,    // rectangle-draw mode active?
+  start: null,     // L.LatLng drag start
+  rect:  null,     // L.Rectangle drawn on map
+};
+
+/* Toggle the explore draw mode on/off */
+function toggleExplore() {
+  if (SAMPLER.mode) _cancelSamplerDraw();   // cancel sampler draw if active
+  EX.mode = !EX.mode;
+  document.getElementById('btn-explore').classList.toggle('active', EX.mode);
+
+  if (EX.mode) {
+    S.map.dragging.disable();
+    S.map.getContainer().style.cursor = 'crosshair';
+    document.getElementById('btn-explore').dataset.tip =
+      'Click and drag a rectangle over the embedding tile, then release…';
+    S.map.on('mousedown', onExploreDown);
+  } else {
+    _cancelExplore();
+  }
+}
+
+function _cancelExplore() {
+  S.map.off('mousedown', onExploreDown);
+  S.map.off('mousemove', onExploreMove);
+  S.map.dragging.enable();
+  S.map.getContainer().style.cursor = '';
+  if (EX.rect) { S.map.removeLayer(EX.rect); EX.rect = null; }
+  EX.mode  = false;
+  EX.start = null;
+  document.getElementById('btn-explore').classList.remove('active');
+  document.getElementById('btn-explore').dataset.tip =
+    'Load an embedding tile from STAC, then click and drag a rectangle over it';
+}
+
+function closeExplore() {
+  document.getElementById('ep').style.display = 'none';
+  _cancelExplore();
+}
+
+function onExploreDown(e) {
+  EX.start = e.latlng;
+  if (EX.rect) { S.map.removeLayer(EX.rect); EX.rect = null; }
+  EX.rect = L.rectangle([e.latlng, e.latlng], {
+    pane: 'explore-draw',          // always on top of image overlays
+    color: '#3a7bd5', weight: 4, dashArray: '5,4',
+    fill: true, fillOpacity: 0.3, interactive: false,
+  }).addTo(S.map);
+  S.map.on('mousemove', onExploreMove);
+  S.map.once('mouseup', onExploreUp);
+  // Prevent the drag from panning the map
+  L.DomEvent.stopPropagation(e.originalEvent);
+}
+
+function onExploreMove(e) {
+  if (!EX.rect || !EX.start) return;
+  EX.rect.setBounds(L.latLngBounds(EX.start, e.latlng));
+}
+
+async function onExploreUp(e) {
+  S.map.off('mousemove', onExploreMove);
+  if (!EX.rect || !EX.start) { _cancelExplore(); return; }
+
+  const bounds = L.latLngBounds(EX.start, e.latlng);
+  const latSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
+  const lngSpan = Math.abs(bounds.getEast()  - bounds.getWest());
+  if (latSpan < 0.001 || lngSpan < 0.001) { _cancelExplore(); return; }
+
+  // Show panel and start loading — purge any existing Plotly graph cleanly
+  const panel = document.getElementById('ep');
+  panel.style.display = 'flex';
+  document.getElementById('ep-status').textContent = 'Finding embedding tile…';
+  try { Plotly.purge('ep-plot'); } catch(e) {}
+  document.getElementById('ep-plot').innerHTML = '';
+
+  // Disable draw mode (keep panel open)
+  S.map.off('mousedown', onExploreDown);
+  S.map.dragging.enable();
+  S.map.getContainer().style.cursor = '';
+  EX.mode = false;
+  document.getElementById('btn-explore').classList.remove('active');
+  document.getElementById('btn-explore').dataset.tip =
+    'Load an embedding tile from STAC, then click and drag a rectangle over it';
+
+  // Find first visible embedding tile that has the tiff loaded
+  const embedLayer = S.layers.find(l =>
+    (l.type === 'embed' || (l.isRef && l.numBands > 3)) &&
+    l.visible && l.tiff && l.images
+  );
+  if (!embedLayer) {
+    document.getElementById('ep-status').textContent =
+      '⚠ No embedding tile loaded: load one from the STAC catalog first.';
+    return;
+  }
+
+  await runPCAExplore(embedLayer, bounds);
+}
+
+/* ── Main explore function ───────────────────────────────────── */
+async function runPCAExplore(layer, wgs84Bounds) {
+  const setStatus = t => { document.getElementById('ep-status').textContent = t; };
+
+  // Give the browser one frame to render the panel at its final flex dimensions
+  // before Plotly tries to measure the container.
+  await new Promise(r => requestAnimationFrame(r));
+
+  const { images, projDef, origin:[ox,oy], res:[rx,ry], fullW, fullH } = layer;
+  const numBands = layer.numBands;  // 128 for embedding tiles
+
+  // ① Convert WGS84 selection rectangle to native CRS
+  let xMin=Infinity, xMax=-Infinity, yMin=Infinity, yMax=-Infinity;
+  for (const [la, ln] of [
+    [wgs84Bounds.getSouth(), wgs84Bounds.getWest()],
+    [wgs84Bounds.getSouth(), wgs84Bounds.getEast()],
+    [wgs84Bounds.getNorth(), wgs84Bounds.getWest()],
+    [wgs84Bounds.getNorth(), wgs84Bounds.getEast()],
+  ]) {
+    try {
+      const {x, y} = fromWGS84(projDef, la, ln);
+      if(x<xMin) xMin=x; if(x>xMax) xMax=x;
+      if(y<yMin) yMin=y; if(y>yMax) yMax=y;
+    } catch(e) {}
+  }
+
+  const colMin = Math.max(0, Math.floor((xMin - ox) / rx));
+  const colMax = Math.min(fullW, Math.ceil ((xMax - ox) / rx));
+  const rowMin = Math.max(0, Math.floor((yMax - oy) / ry));  // north (ry<0)
+  const rowMax = Math.min(fullH, Math.ceil ((yMin - oy) / ry)); // south
+
+  if (colMin >= colMax || rowMin >= rowMax) {
+    setStatus('⚠ Rectangle is outside the embedding tile extent.'); return;
+  }
+
+  // ② Pick an overview that gives us at most ~64×64 pixels
+  const MAX_DIM = 64;
+  const nCols = colMax - colMin, nRows = rowMax - rowMin;
+  const targetW = Math.min(Math.round(MAX_DIM * fullW / nCols), fullW);
+  const ovImg  = pickOverview(images, targetW);
+  const scale  = fullW / ovImg.getWidth();
+
+  const oColMin = Math.max(0, Math.floor(colMin / scale));
+  const oColMax = Math.min(ovImg.getWidth(),  Math.ceil(colMax / scale));
+  const oRowMin = Math.max(0, Math.floor(rowMin / scale));
+  const oRowMax = Math.min(ovImg.getHeight(), Math.ceil(rowMax / scale));
+  const oW = Math.max(1, oColMax - oColMin);
+  const oH = Math.max(1, oRowMax - oRowMin);
+
+  setStatus(`Reading all ${numBands} bands at ${oW}×${oH} px — may take a moment…`);
+  await new Promise(r => setTimeout(r, 20));  // let UI update
+
+  // ③ Read all bands
+  let rasters;
+  try {
+    const bands0 = Array.from({length: numBands}, (_, i) => i);
+    rasters = await ovImg.readRasters({
+      window: [oColMin, oRowMin, oColMax, oRowMax],
+      samples: bands0, width: oW, height: oH,
+      interleave: false, fillValue: 0,
+    });
+  } catch(err) {
+    setStatus(`⚠ Read error: ${err.message.slice(0,80)}`); return;
+  }
+
+  // ④ Sample pixels, skip nodata
+  const nd = layer.nodata;
+  const nPx = oW * oH;
+  const MAX_PTS = 4096;
+  const step = Math.max(1, Math.floor(nPx / MAX_PTS));
+  const pixels = [];
+
+  for (let i = 0; i < nPx; i += step) {
+    // nodata check: if declared nodata — skip matching pixels; else skip all-zero vectors
+    if (nd !== null && nd !== undefined) {
+      if (rasters[0][i] === nd) continue;
+    } else {
+      let allZ = true;
+      for (let b = 0; b < numBands; b++) { if (rasters[b][i] !== 0) { allZ=false; break; } }
+      if (allZ) continue;
+    }
+    const v = new Float32Array(numBands);
+    for (let b = 0; b < numBands; b++) v[b] = rasters[b][i];
+    pixels.push(v);
+  }
+
+  if (pixels.length < 10) {
+    setStatus(`⚠ Only ${pixels.length} valid pixels in selection : draw a larger rectangle.`); return;
+  }
+
+  setStatus(`Computing PCA on ${pixels.length} pixels × ${numBands} bands…`);
+  await new Promise(r => setTimeout(r, 20));
+
+  // ⑤ PCA — power iteration for top 3 eigenvectors
+  const pca = computePCA3(pixels, numBands);
+
+  // ⑥ Project each pixel onto the 3 PCs
+  const pc1=[], pc2=[], pc3=[];
+  for (const px of pixels) {
+    let s1=0, s2=0, s3=0;
+    for (let b = 0; b < numBands; b++) {
+      const c = px[b] - pca.mean[b];
+      s1 += c * pca.pc[0][b];
+      s2 += c * pca.pc[1][b];
+      s3 += c * pca.pc[2][b];
+    }
+    pc1.push(s1); pc2.push(s2); pc3.push(s3);
+  }
+
+  // ⑦ Map projections to colour (each PC → one channel)
+  function pcToChannel(arr) {
+    let mn=Infinity, mx=-Infinity;
+    for(const v of arr){if(v<mn)mn=v; if(v>mx)mx=v;}
+    const span=mx-mn||1;
+    return arr.map(v=>Math.round((v-mn)/span*255));
+  }
+  const ch1=pcToChannel(pc1), ch2=pcToChannel(pc2), ch3=pcToChannel(pc3);
+  const colors = ch1.map((r,i)=>`rgb(${r},${ch2[i]},${ch3[i]})`);
+
+  const varPct = pca.varFrac.map(v=>(v*100).toFixed(1)+'%').join(' / ');
+  setStatus(`${pixels.length} pts · variance explained: ${varPct}`);
+
+  // ⑧ Plotly 3D scatter
+  // Use newPlot (not react) — react can silently fail on a freshly-purged div.
+  const dark = '#10111a';
+  await Plotly.newPlot('ep-plot', [{
+    type: 'scatter3d', mode: 'markers',
+    x: pc1, y: pc2, z: pc3,
+    marker: { size: 2.5, color: colors, opacity: 0.85 },
+    hovertemplate: 'PC1:%{x:.2f}<br>PC2:%{y:.2f}<br>PC3:%{z:.2f}<extra></extra>',
+  }], {
+    paper_bgcolor: dark,
+    scene: {
+      bgcolor: dark,
+      xaxis: { title:'PC1', color:'#8892aa', gridcolor:'#1e2038', zerolinecolor:'#252840' },
+      yaxis: { title:'PC2', color:'#8892aa', gridcolor:'#1e2038', zerolinecolor:'#252840' },
+      zaxis: { title:'PC3', color:'#8892aa', gridcolor:'#1e2038', zerolinecolor:'#252840' },
+    },
+    margin: { l:0, r:0, t:0, b:0 },
+    font: { color:'#8892aa', size:10 },
+  }, { responsive:true, displayModeBar:false });
+
+  // Force Plotly to recalculate layout after the flex container has settled
+  requestAnimationFrame(() => { try { Plotly.Plots.resize('ep-plot'); } catch(e) {} });
+}
+
+/* ── PCA via power iteration — returns top 3 eigenvectors ───── */
+function computePCA3(pixels, nDims) {
+  const N = pixels.length;
+
+  // Mean per dimension
+  const mean = new Float64Array(nDims);
+  for (const px of pixels) for (let b=0; b<nDims; b++) mean[b] += px[b];
+  for (let b=0; b<nDims; b++) mean[b] /= N;
+
+  // Centre the data in-place (working copy)
+  const X = pixels.map(px => {
+    const c = new Float64Array(nDims);
+    for (let b=0; b<nDims; b++) c[b] = px[b] - mean[b];
+    return c;
+  });
+
+  const pcs=[], eigvals=[];
+
+  for (let k=0; k<3; k++) {
+    // Random unit vector
+    let v = new Float64Array(nDims);
+    for (let b=0; b<nDims; b++) v[b] = Math.random()-0.5;
+    _normVec(v);
+
+    // Power iteration: v ← normalise( Xᵀ (X v) )
+    for (let iter=0; iter<60; iter++) {
+      const Xv = new Float64Array(N);
+      for (let i=0; i<N; i++) { let s=0; for(let b=0;b<nDims;b++) s+=X[i][b]*v[b]; Xv[i]=s; }
+      const vn = new Float64Array(nDims);
+      for (let i=0; i<N; i++) { const xi=Xv[i]; for(let b=0;b<nDims;b++) vn[b]+=X[i][b]*xi; }
+      _normVec(vn);
+      let dot=0; for(let b=0;b<nDims;b++) dot+=v[b]*vn[b];
+      v = vn;
+      if (Math.abs(dot) > 1-1e-9) break;
+    }
+
+    // Eigenvalue = variance along this direction
+    let ev=0;
+    for (let i=0; i<N; i++) { let d=0; for(let b=0;b<nDims;b++) d+=X[i][b]*v[b]; ev+=d*d; }
+    ev /= N;
+    eigvals.push(ev);
+    pcs.push(v);
+
+    // Deflate: subtract this component from each row
+    for (let i=0; i<N; i++) {
+      let d=0; for(let b=0;b<nDims;b++) d+=X[i][b]*v[b];
+      for(let b=0;b<nDims;b++) X[i][b]-=d*v[b];
+    }
+  }
+
+  const totalVar = eigvals.reduce((a,b)=>a+b,0)||1;
+  return { pc:pcs, mean, varFrac: eigvals.map(e=>e/totalVar) };
+}
+
+function _normVec(v) {
+  let n=0; for(let i=0;i<v.length;i++) n+=v[i]*v[i];
+  n=Math.sqrt(n)||1; for(let i=0;i<v.length;i++) v[i]/=n;
+}
+
+// Make a panel draggable by its header bar.
+// On first drag we snapshot getBoundingClientRect() and switch from whatever
+// CSS positioning (bottom/right/transform) to explicit top/left — no jitter.
+function makeDraggable(panel, handle) {
+  let dragging = false, startX = 0, startY = 0, startL = 0, startT = 0;
+
+  handle.addEventListener('mousedown', e => {
+    if (e.target.tagName === 'BUTTON') return;   // don't steal button clicks
+    dragging = true;
+    startX = e.clientX; startY = e.clientY;
+    const mapc  = document.getElementById('mapc').getBoundingClientRect();
+    const prect = panel.getBoundingClientRect();
+    // Collapse any transform/bottom/right anchoring to plain top/left
+    panel.style.transform = 'none';
+    panel.style.bottom    = 'auto';
+    panel.style.right     = 'auto';
+    startL = prect.left - mapc.left;
+    startT = prect.top  - mapc.top;
+    panel.style.left = startL + 'px';
+    panel.style.top  = startT + 'px';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const mapc = document.getElementById('mapc').getBoundingClientRect();
+    const newL = Math.max(0, Math.min(mapc.width  - panel.offsetWidth,  startL + (e.clientX - startX)));
+    const newT = Math.max(0, Math.min(mapc.height - panel.offsetHeight, startT + (e.clientY - startY)));
+    panel.style.left = newL + 'px';
+    panel.style.top  = newT + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+  });
+}
+
+function initSidebarResize() {
+  const handle = document.getElementById('sb-handle');
+  const sb     = document.getElementById('sb');
+  let dragging = false, startX = 0, startW = 0;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startX   = e.clientX;
+    startW   = sb.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor    = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const w = Math.max(220, Math.min(560, startW + (e.clientX - startX)));
+    sb.style.width = w + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor     = '';
+    document.body.style.userSelect = '';
+  });
+}
+
+async function init() {
+  initMap();
+  initSidebarResize();
+
+  // Detect the local CORS proxy (tools/cors_proxy.py) before any COG loads —
+  // if present, no-CORS-bucket URLs get transparently routed through it.
+  // (no CORS proxy needed: the demo bucket allows the viewer's origin)
+
+  // Draggable panels
+  makeDraggable(document.getElementById('ep'),  document.querySelector('.ep-head'));
+  makeDraggable(document.getElementById('pxp'), document.querySelector('.pxhead'));
+  makeDraggable(document.getElementById('sp'),  document.querySelector('.sp-head'));
+
+  // When panels are resized (by CSS resize handle), tell Plotly
+  new ResizeObserver(() => {
+    try { Plotly.Plots.resize('ep-plot'); } catch(e) {}
+  }).observe(document.getElementById('ep'));
+  new ResizeObserver(() => {
+    try { Plotly.Plots.resize('sp-plot'); } catch(e) {}
+  }).observe(document.getElementById('sp'));
+  for (const cfg of CFG.PRELOAD) {
+    const layer = mkLayer(cfg.name, cfg.url, cfg.type);
+    if (cfg.autoZoom === false) layer.autoZoom = false;
+    layer.visible = cfg.visible !== false;
+    S.layers.push(layer);
+    renderLists();
+    await loadCOG(layer.id);
+  }
+  // STAC preloads fire after display layers — don't await so they load in parallel
+  for (const cfg of CFG.PRELOAD_STAC) loadSTACPreload(cfg);
+
+  // Auto-fetch the global-production tile catalog (embeddings + scale)
+  initDemo();
+
+  // S2 tile grid + tour
+  loadS2TilesFromCatalog();
+  showTour();
+}
+
+// ═══════════════════════════════════════════════════════════
+// S2 TILE GRID (GeoJSON)
+// ═══════════════════════════════════════════════════════════
+const S2 = { layer: null };
+
+async function loadS2TilesFromCatalog() {
+  const statusEl = document.getElementById('s2-status');
+  try {
+    const cat = await loadCatalog();
+    S2.layer = L.layerGroup(cat.tiles.map(t => {
+      const r = L.rectangle([[t.bbox[1], t.bbox[0]], [t.bbox[3], t.bbox[2]]],
+        { color:'#4a8fd5', weight:1.2, opacity:0.7, fill:false, interactive:true });
+      r.bindTooltip(`${t.s2_tile} · ${t.start_date} → ${t.end_date}`, { sticky:true, direction:'top', className:'s2-tile-label', opacity:0.95 });
+      return r;
+    })).addTo(S.map);
+    statusEl.textContent = `${cat.tiles.length} demo tiles`;
+    statusEl.style.color = '#4a6';
+  } catch(e) {
+    statusEl.textContent = `Failed: ${e.message}`;
+    statusEl.style.color = '#c0392b';
+    document.getElementById('s2-tiles-toggle').disabled = true;
+  }
+}
+
+async function loadS2TilesGeoJSON() {
+  const statusEl = document.getElementById('s2-status');
+  try {
+    const res = await fetch('uk_grid_s2tiles.geojson');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const geojson = await res.json();
+    S2.layer = L.geoJSON(geojson, {
+      style: { color:'#4a8fd5', weight:1.5, opacity:0.7, fill:false, interactive:true },
+      onEachFeature: (feat, layer) => {
+        const label = feat.properties?.Name || '';
+        layer.bindTooltip(label, {
+          permanent:false, sticky:true, direction:'top', className:'s2-tile-label', opacity:0.95,
+        });
+        layer.bindPopup(`<b>S2 Tile:</b> ${label}`);
+      },
+    }).addTo(S.map);
+    const n = geojson.features?.length || 0;
+    statusEl.textContent = `${n} tile polygons`;
+    statusEl.style.color = '#4a6';
+  } catch(e) {
+    statusEl.textContent = `Failed: ${e.message}`;
+    statusEl.style.color = '#c0392b';
+    document.getElementById('s2-tiles-toggle').disabled = true;
+  }
+}
+
+function toggleS2TilesLayer(show) {
+  if (!S2.layer) return;
+  if (show) S2.layer.addTo(S.map);
+  else S.map.removeLayer(S2.layer);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAGE TOUR
+// ═══════════════════════════════════════════════════════════
+const TOUR_STEPS = [
+  {
+    icon: '🛰',
+    title: 'Welcome to the WorldCereal Embeddings Explorer',
+    target: null,
+    desc: `Explore and compare <b>128-band embedding tiles</b> produced by the WorldCereal model.<br><br>
+Pan and zoom the map to navigate. Layers render adaptively at the current viewport resolution. No need to load the full file.`,
+  },
+  {
+    icon: '🗺',
+    title: 'S2 Tile Grid',
+    target: '.s2-heading',
+    desc: `The <b>S2 Tile Grid</b> at the top of the sidebar shows blue polygon outlines for all available S2 tiles, each labelled with its tile ID (e.g. <code>30UXD</code>).<br><br>
+Use the <b>Show</b> toggle to hide or reveal the outlines. Click a polygon to see the tile ID. This helps you identify which tile to load for a specific region.`,
+  },
+  {
+    icon: '📂',
+    title: 'Left Sidebar: Layer Management',
+    target: '#ld',
+    desc: `<b>Display Layers</b> shows pre-loaded RGB composites and PCA visualisations.<br>
+<b>Embedding Layers (128-band)</b> lists full embedding COGs for exploration and classification.<br>
+<b>STAC Catalog</b> lets you browse all available tiles and click to load any of them.<br>
+<b>Add Custom COG URL</b> accepts any Cloud-Optimised GeoTIFF URL to add your own layers.`,
+  },
+  {
+    icon: '🎛',
+    title: 'Layer Controls',
+    target: '#le',
+    desc: `Each loaded layer has controls for:<br>
+<b>Visibility toggle</b> and <b>Opacity slider</b><br>
+<b>R/G/B band selection</b> for embedding layers. Try different band combos to highlight spectral differences.<br>
+<b>Recompute</b> recalculates the 1-99% stretch from the current viewport.<br>
+<b>Use ref</b> snaps back to the shared stretch from the reference tile (30UXD).<br>
+<b>COG</b> opens the raw 128-band GeoTIFF in a new tab for download.`,
+  },
+  {
+    icon: '⬡',
+    title: 'Explore 3D and PCA Sampler',
+    target: '#btn-explore',
+    desc: `Two advanced tools live in the header bar:<br><br>
+<b>Explore 3D</b> lets you load an embedding tile, draw a rectangle over any area, and see a live 3D PCA scatter plot of the pixels coloured by a 3-band PCA projection.<br><br>
+<b>PCA Sampler</b> lets you draw polygons over different land-cover types and compare their embedding distributions in a shared 3D PCA space.`,
+  },
+  {
+    icon: '🔬',
+    title: 'Ready to Classify?',
+    target: null,
+    desc: `Once you have explored the embeddings here, head to the <b>Classify page</b> to train supervised or K-means classifiers and export results as PNG or GeoTIFF.<br><br>
+Click <b>Classify</b> in the top-right navigation to open it in a new tab.`,
+  },
+];
+
+let TOUR_IDX = 0;
+
+function _tourShowHalo(selector) {
+  const halo = document.getElementById('tour-halo');
+  const box  = document.getElementById('tour-box');
+  const ov   = document.getElementById('tour-overlay');
+  if (!selector) {
+    halo.style.display = 'none';
+    box.style.position = '';
+    box.style.left = box.style.top = box.style.right = box.style.bottom = '';
+    ov.style.alignItems = 'center';
+    ov.style.justifyContent = 'center';
+    ov.style.background = 'rgba(0,0,0,.25)';
+    return;
+  }
+  const el = document.querySelector(selector);
+  if (!el) { _tourShowHalo(null); return; }
+  const r = el.getBoundingClientRect();
+  halo.style.display = 'block';
+  halo.style.left   = (r.left   - 5) + 'px';
+  halo.style.top    = (r.top    - 5) + 'px';
+  halo.style.width  = (r.width  + 10) + 'px';
+  halo.style.height = (r.height + 10) + 'px';
+  // Overlay is transparent — halo box-shadow provides the dimming
+  ov.style.background = 'transparent';
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const bw = Math.min(440, vw - 24), bh = 400;
+  let left, top;
+  ov.style.alignItems = 'flex-start';
+  ov.style.justifyContent = 'flex-start';
+  if (r.right + bw + 24 <= vw) {
+    left = r.right + 16; top = Math.max(8, Math.min(vh - bh - 8, r.top + r.height / 2 - bh / 2));
+  } else if (r.left - bw - 24 >= 0) {
+    left = r.left - bw - 16; top = Math.max(8, Math.min(vh - bh - 8, r.top + r.height / 2 - bh / 2));
+  } else if (r.bottom + bh + 16 <= vh) {
+    left = Math.max(8, Math.min(vw - bw - 8, r.left + r.width / 2 - bw / 2)); top = r.bottom + 16;
+  } else {
+    left = Math.max(8, Math.min(vw - bw - 8, r.left + r.width / 2 - bw / 2)); top = Math.max(8, r.top - bh - 16);
+  }
+  box.style.position = 'fixed';
+  box.style.left = left + 'px';
+  box.style.top  = top + 'px';
+}
+
+function showTour(forceShow) {
+  const seen = localStorage.getItem('wc_viewer_tour_seen');
+  if (seen && !forceShow) return;
+  TOUR_IDX = 0;
+  renderTourStep();
+  document.getElementById('tour-overlay').style.display = 'flex';
+}
+
+function skipTour() {
+  document.getElementById('tour-overlay').style.display = 'none';
+  document.getElementById('tour-halo').style.display = 'none';
+  localStorage.setItem('wc_viewer_tour_seen', '1');
+}
+
+function tourStep(dir) {
+  TOUR_IDX = Math.max(0, Math.min(TOUR_STEPS.length - 1, TOUR_IDX + dir));
+  renderTourStep();
+}
+
+function renderTourStep() {
+  const step = TOUR_STEPS[TOUR_IDX];
+  const n = TOUR_STEPS.length;
+  document.getElementById('tour-icon').textContent  = step.icon;
+  document.getElementById('tour-title').textContent = step.title;
+  document.getElementById('tour-desc').innerHTML    = step.desc;
+  document.getElementById('tour-step-ctr').textContent = `${TOUR_IDX + 1} / ${n}`;
+  document.getElementById('tour-prev').style.visibility = TOUR_IDX === 0 ? 'hidden' : 'visible';
+  const nextBtn = document.getElementById('tour-next');
+  const isLast  = TOUR_IDX === n - 1;
+  nextBtn.textContent = isLast ? '✓ Get Started' : 'Next →';
+  nextBtn.className   = 'tour-btn ' + (isLast ? 'tour-btn-finish' : 'tour-btn-next');
+  nextBtn.onclick     = isLast ? skipTour : () => tourStep(1);
+  document.getElementById('tour-bar').innerHTML = Array.from({length: n}, (_, i) =>
+    `<div class="tour-dot ${i < TOUR_IDX ? 'done' : i === TOUR_IDX ? 'active' : ''}"></div>`
+  ).join('');
+  _tourShowHalo(step.target || null);
+}
+
+init();
+</script>
+</body>
+</html>
