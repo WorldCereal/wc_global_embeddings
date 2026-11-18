@@ -696,7 +696,7 @@ const S = {
 // MAP
 // ═══════════════════════════════════════════════════════════
 function initMap() {
-  S.map = L.map('map', { center:[54.3,-2.5], zoom:7 });
+  S.map = L.map('map', { center:[50.7,4.6], zoom:8 });
 
   // Custom pane for the explore-draw rectangle — sits above all image overlays
   // (overlayPane = 400, markerPane = 600; we use 650 to float above everything)
@@ -710,26 +710,26 @@ function initMap() {
     { attribution:'© Esri', maxZoom:19 }
   ).addTo(S.map);
 
-  // CartoDB light — also works from file://
+  // Esri light gray canvas (no API key)
   const carto = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    { attribution:'© OpenStreetMap © CARTO', maxZoom:19, subdomains:'abcd' }
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    { attribution:'© Esri', maxZoom:16 }
   );
 
-  // CartoDB dark — high contrast for remote sensing overlays
+  // Esri dark gray canvas (no API key) — high contrast for overlays
   const cartoDark = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    { attribution:'© OpenStreetMap © CARTO', maxZoom:19, subdomains:'abcd' }
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    { attribution:'© Esri', maxZoom:16 }
   );
 
   // OSM — may be blocked from file:// due to referer policy
   const osm = L.tileLayer(
-    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     { attribution:'© OpenStreetMap', maxZoom:19 }
   );
 
   L.control.layers(
-    { 'Esri Satellite':esri, 'CartoDB Light':carto, 'CartoDB Dark':cartoDark, 'OSM (may block file://)':osm },
+    { 'Esri Satellite':esri, 'Esri Light Gray':carto, 'Esri Dark Gray':cartoDark, 'OpenStreetMap':osm },
     {}, { position:'topright' }
   ).addTo(S.map);
 
@@ -1360,6 +1360,11 @@ function renderLists() {
   syncLayerOrder();
 }
 
+function zoomToLayer(id) {
+  const l = getLayer(id);
+  if (l?.fullBounds) S.map.fitBounds(l.fullBounds, { padding:[20,20] });
+}
+
 function renderGroup(cid, layers) {
   const el = document.getElementById(cid);
   if (!layers.length) { el.innerHTML = '<div class="empty">None loaded</div>'; return; }
@@ -1394,6 +1399,8 @@ function renderGroup(cid, layers) {
         <button class="bxs" onclick="restretchLayer(${l.id})"
           ${canRestretch?'':'disabled'}
           title="Recompute 1–99% stretch from current viewport data">↺ Recompute</button>
+        <button class="bxs" onclick="zoomToLayer(${l.id})" ${l.fullBounds?'':'disabled'}
+          title="Zoom the map to this layer">⤢ Zoom</button>
         ${!l.isRef && S.refStretch && l.useOwnStretch ? `
         <button class="bxs bxs-ref" onclick="useRefStretch(${l.id})"
           title="Switch back to shared 30UXD reference stretch">← Use ref</button>` : ''}
@@ -1407,6 +1414,7 @@ function renderGroup(cid, layers) {
     <input class="lchk" type="checkbox" ${l.visible?'checked':''} ${da} onchange="toggleVis(${l.id})">
     <span class="lname" title="${esc(l.name)}">${esc(l.name)}</span>
     <span class="lpill ${pill}">${ptxt}</span>
+    ${l.type==='mosaic' && l.fullBounds ? `<button class="ldel" style="color:#7eb8f7" onclick="zoomToLayer(${l.id})" title="Zoom to layer">⤢</button>` : ''}
     <button class="ldel" onclick="removeLayer(${l.id})">✕</button>
   </div>
   <div class="loprow">
@@ -1649,7 +1657,14 @@ async function mosaicStyle(layer) {
   let sem = {};
   try {
     const md = await p.images[0].img.getGDALMetadata(st.band - 1);
-    sem = JSON.parse(md?.value_semantics || '{}');
+    // geotiff.js returns the GDAL_METADATA XML values still entity-escaped, here even twice
+    // ({&amp;quot;11&amp;quot;: ...}): decode until nothing changes
+    let raw = md?.value_semantics || '{}', prev;
+    do {
+      prev = raw;
+      raw = raw.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    } while (raw !== prev);
+    sem = JSON.parse(raw);
   } catch(e) { console.warn('value_semantics', e); }
   st.lut = new Uint8ClampedArray(256 * 4);
   st.rows = [];
@@ -1877,8 +1892,24 @@ async function addCustomLayer() {
 // ═══════════════════════════════════════════════════════════
 // PIXEL INSPECTOR
 // ═══════════════════════════════════════════════════════════
+// Click on the S2 grid: offer the 128-band embeddings of the (not yet loaded) tile(s) under the click
+function gridLoadPopup(latlng) {
+  if (!S2.layer || !S.map.hasLayer(S2.layer)) return;
+  const { lat, lng } = latlng;
+  const under = (S.stacRaw || []).filter(i => i._tile && lng >= i._tile.bbox[0] && lng <= i._tile.bbox[2]
+                                         && lat >= i._tile.bbox[1] && lat <= i._tile.bbox[3]
+                                         && !S.layers.some(l => l.stacId === i.id));
+  if (!under.length) return;
+  L.popup({ className: 'grid-pop', maxWidth: 260 }).setLatLng(latlng).setContent(
+    `<div style="font-size:11px;margin-bottom:4px">S2 tile${under.length > 1 ? 's' : ''} here (tiles overlap at the edges):</div>` +
+    under.map(i => `<button class="bxs" style="display:block;width:100%;margin:3px 0"
+       onclick="S.map.closePopup();loadSTACItem('${esc(i.id)}')">+ Load ${esc(i.id)} (128 bands)</button>`).join('')
+  ).openOn(S.map);
+}
+
 async function onMapClick(e) {
   if (EX.mode || SAMPLER.mode) return;   // rectangle draw modes capture clicks instead
+  gridLoadPopup(e.latlng);
   const { lat, lng } = e.latlng;
   const active = S.layers.filter(l => l.visible && (l.type === 'mosaic' ? l.leafletLayer : (l.currentRasters && l.origin)));
   if (!active.length) return;
@@ -2836,7 +2867,7 @@ async function loadS2TilesFromCatalog() {
     S2.layer = L.layerGroup(cat.tiles.map(t => {
       const r = L.rectangle([[t.bbox[1], t.bbox[0]], [t.bbox[3], t.bbox[2]]],
         { color:'#4a8fd5', weight:1.2, opacity:0.7, fill:false, interactive:true });
-      r.bindTooltip(`${t.s2_tile} · ${t.start_date} → ${t.end_date}`, { sticky:true, direction:'top', className:'s2-tile-label', opacity:0.95 });
+      r.bindTooltip(`${t.s2_tile} · ${t.start_date} → ${t.end_date} · click inside to load`, { sticky:true, direction:'top', className:'s2-tile-label', opacity:0.95 });
       return r;
     })).addTo(S.map);
     statusEl.textContent = `${cat.tiles.length} demo tiles`;

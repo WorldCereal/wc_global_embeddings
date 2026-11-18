@@ -791,7 +791,7 @@ const CLF = {
 // MAP
 // ═══════════════════════════════════════════════════════════
 function initMap() {
-  S.map = L.map('map', { center:[54.3,-2.5], zoom:7 });
+  S.map = L.map('map', { center:[50.7,4.6], zoom:8 });
 
   S.map.createPane('clf-overlay');
   S.map.getPane('clf-overlay').style.zIndex = 420;
@@ -803,10 +803,10 @@ function initMap() {
     { attribution:'© Esri', maxZoom:19 }
   ).addTo(S.map);
   const carto = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    { attribution:'© OpenStreetMap © CARTO', maxZoom:19, subdomains:'abcd' }
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    { attribution:'© Esri', maxZoom:16 }
   );
-  L.control.layers({'Esri Satellite':esri,'CartoDB Dark':carto},{},{position:'topright'}).addTo(S.map);
+  L.control.layers({'Esri Satellite':esri,'Esri Dark Gray':carto},{},{position:'topright'}).addTo(S.map);
 
   S.map.on('zoomend moveend', () => {
     S.layers.forEach(l => { if (l.visible && l.tiff) scheduleRefresh(l.id); });
@@ -1406,7 +1406,23 @@ function updateClassColor(classId, newColor) {
 // ═══════════════════════════════════════════════════════════
 // MAP CLICK — add point
 // ═══════════════════════════════════════════════════════════
+// Click outside the loaded tiles (grid shown): offer the demo tile(s) under the click
+function gridLoadPopup(latlng) {
+  if (!S2.visible || !S2.layer) return false;
+  const {lat,lng}=latlng, inBox=(t)=>lng>=t.bbox[0]&&lng<=t.bbox[2]&&lat>=t.bbox[1]&&lat<=t.bbox[3];
+  const loaded=new Set(S.layers.map(l=>l.stacId));
+  if (S2.tiles.some(t=>loaded.has(t.s2_tile)&&inBox(t))) return false;   // on a loaded tile: normal click
+  const under=S2.tiles.filter(t=>inBox(t));
+  if (!under.length) return false;
+  L.popup({maxWidth:260}).setLatLng(latlng).setContent(
+    under.map(t=>`<button class="bxs" style="display:block;width:100%;margin:3px 0"
+      onclick="S.map.closePopup();loadSTACItem('${esc(t.s2_tile)}')">+ Load ${esc(t.s2_tile)} (128 bands)</button>`).join('')
+  ).openOn(S.map);
+  return true;
+}
+
 function onMapClick(e) {
+  if (gridLoadPopup(e.latlng)) return;
   if (!CLS.addMode||!CLS.activeId) return;
   const cls=CLS.classes.find(c=>c.id===CLS.activeId);
   if (!cls) return;
@@ -2834,7 +2850,7 @@ function initRightPanelResize() {
 // ═══════════════════════════════════════════════════════════
 // S2 TILE GRID (GeoJSON)
 // ═══════════════════════════════════════════════════════════
-const S2 = { layer: null, visible: true };
+const S2 = { layer: null, visible: true, tiles: [] };
 
 async function loadS2TilesGeoJSON() {
   const statusEl = document.getElementById('s2-status');
@@ -2843,6 +2859,7 @@ async function loadS2TilesGeoJSON() {
     const res = await fetch(`${CFG.DEMO_BASE}/tiles.json`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const cat = await res.json();
+    S2.tiles = cat.tiles || [];
     const geojson = { type: 'FeatureCollection', features: (cat.tiles || []).map(t => ({
       type: 'Feature', properties: { Name: t.s2_tile },
       geometry: { type: 'Polygon', coordinates: [[[t.bbox[0],t.bbox[1]],[t.bbox[2],t.bbox[1]],[t.bbox[2],t.bbox[3]],[t.bbox[0],t.bbox[3]],[t.bbox[0],t.bbox[1]]]] } })) };
@@ -2858,12 +2875,11 @@ async function loadS2TilesGeoJSON() {
           permanent: false, sticky: true, direction: 'top', className: 's2-tile-label',
           opacity: 0.95,
         });
-        layer.bindPopup(`<b>S2 Tile:</b> ${label}`);
       },
     }).addTo(S.map);
 
     const n = geojson.features?.length || 0;
-    statusEl.textContent = `${n} tile polygons loaded`;
+    statusEl.textContent = `${n} demo tiles · click inside one to load it`;
     statusEl.style.color = '#4a6';
   } catch(e) {
     statusEl.textContent = `Failed to load: ${e.message}`;

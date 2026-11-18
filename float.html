@@ -346,9 +346,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
               <span id="f32-ov">100%</span>
             </div>
             <div class="brow">
-              <label>R</label><input class="binp" id="f32-br" type="number" min="1" max="128" value="53">
-              <label>G</label><input class="binp" id="f32-bg" type="number" min="1" max="128" value="67">
-              <label>B</label><input class="binp" id="f32-bb" type="number" min="1" max="128" value="75">
+              <label>R</label><input class="binp" id="f32-br" type="number" min="1" max="128" onchange="syncF32Bands()" value="53">
+              <label>G</label><input class="binp" id="f32-bg" type="number" min="1" max="128" onchange="syncF32Bands()" value="67">
+              <label>B</label><input class="binp" id="f32-bb" type="number" min="1" max="128" onchange="syncF32Bands()" value="75">
             </div>
             <button class="f32-btn" id="f32-btn" onclick="toggleFloat32()" disabled>
               ⚡ Retrieve Float32 Embeddings
@@ -430,14 +430,7 @@ const CFG = {
     32636:'+proj=utm +zone=36 +datum=WGS84 +units=m +no_defs',
   },
   // Extra tiles outside the main STAC collection (injected as synthetic items)
-  EXTRA_TILES: [
-    {
-      id: '36NXF_0_1',
-      label: '36NXF_0_1 · Bungoma County (Kenya)',
-      cogUrl: 'https://s3.waw4-1.cloudferro.com/worldcereal-uk-waw4-1-o2q1qptnzbki8vavzriorqk0498vwc6tqvxlzvnw5/worldcereal_bonguma_embeddings_raw/Bonguma_croptype_embeddings_36NXF_0_1_2023-09-19_2024-09-10.tif',
-      scaleUrl: 'https://s3.waw4-1.cloudferro.com/worldcereal-uk-waw4-1-o2q1qptnzbki8vavzriorqk0498vwc6tqvxlzvnw5/worldcereal_bonguma_scales_raw/Bonguma_croptype_embeddings_scale_36NXF_0_1_2023-09-19_2024-09-10.tif',
-    },
-  ],
+  EXTRA_TILES: [],   // all tiles come from the demo catalog (tiles.json)
 };
 
 Object.entries(CFG.PROJ).forEach(([c,d]) => proj4.defs(`EPSG:${c}`,d));
@@ -737,7 +730,7 @@ function meshWarp(rasters, scRaster, rW, rH,
 // MAP INIT
 // ═══════════════════════════════════════════════════════════
 function initMap() {
-  F.map = L.map('map',{center:[52.5,-1.5],zoom:7,zoomControl:true});
+  F.map = L.map('map',{center:[50.7,4.6],zoom:8,zoomControl:true});
 
   // ── Named panes for explicit z-ordering ──────────────────
   // float32 (bottom) → scales (middle) → uint8 (top)
@@ -752,13 +745,15 @@ function initMap() {
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     {attribution:'© Esri',maxZoom:19});
   const carto = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    {attribution:'© CartoDB',maxZoom:19});
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    {attribution:'© Esri',maxZoom:16});
   const cartoDark = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    {attribution:'© CartoDB',maxZoom:19}).addTo(F.map);
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    {attribution:'© Esri',maxZoom:16}).addTo(F.map);
+  // S2 tile grid of the demo tiles (filled by fetchSTAC); click inside a tile to load it
+  F.grid = L.layerGroup().addTo(F.map);
   L.control.layers(
-    {'Esri Satellite':esri,'CartoDB Light':carto,'CartoDB Dark':cartoDark},{},{position:'topright'}
+    {'Esri Satellite':esri,'Esri Light Gray':carto,'Esri Dark Gray':cartoDark},{'S2 tile grid':F.grid},{position:'topright'}
   ).addTo(F.map);
   F.map.on('zoomend moveend', scheduleRefresh);
   F.map.on('click', onMapClick);
@@ -952,6 +947,8 @@ async function refreshViewport() {
       const rasters = await ovImg.readRasters({
         window:ovWin, samples:bands0, width:outW, height:outH, interleave:false, fillValue:0});
       F.u8.currentRasters=[rasters[0],rasters[1],rasters[2]];
+      // new bands (reloadBands clears the stretch): recompute it from what was just read
+      if (!F.u8.stretches) F.u8.stretches=[0,1,2].map(i=>computePercentile(Array.from(rasters[i]),CFG.STRETCH_LO,CFG.STRETCH_HI,F.u8.nodata));
       F.u8.currentWindow=win; F.u8.currentOutW=outW; F.u8.currentOutH=outH;
       let dataURL;
       if (needsWarp) {
@@ -964,7 +961,7 @@ async function refreshViewport() {
       F.u8.leafletLayer.setUrl(dataURL);
       F.u8.leafletLayer.setBounds(needsWarp?mb:newBoundsDirect);
       setLayerStatus('u8','ok',`${nativeCols}×${nativeRows}px`);
-    } catch(e){ setLayerStatus('u8','ok',F.u8.statusMsg); console.warn('[u8 refresh]',e); }
+    } catch(e){ setLayerStatus('u8','err','Error: '+String(e.message||e).slice(0,70)); console.warn('[u8 refresh]',e); }
   }
 
   // ── Refresh scales layer ──────────────────────────────────
@@ -998,7 +995,7 @@ async function refreshViewport() {
         F.sc.leafletLayer.setBounds(needsWarp?mb:newBoundsDirect);
         setLayerStatus('sc','ok',`${nativeCols}×${nativeRows}px`);
       }
-    } catch(e){ if(F.sc.visible) setLayerStatus('sc','ok',F.sc.statusMsg); console.warn('[sc refresh]',e); }
+    } catch(e){ if(F.sc.visible) setLayerStatus('sc','err','Error: '+String(e.message||e).slice(0,70)); console.warn('[sc refresh]',e); }
   }
 
   // ── Compute and render float32 layer ─────────────────────
@@ -1072,6 +1069,12 @@ function setOpacity(which, v) {
   const layer=F[which]; if(!layer) return;
   layer.opacity=val;
   layer.leafletLayer?.setOpacity?.(val);
+}
+
+// The float32 layer is (uint8 - 128) x scale of the uint8 bands, so its band boxes drive the uint8 bands
+function syncF32Bands() {
+  ['r','g','b'].forEach(c => document.getElementById(`u8-b${c}`).value = document.getElementById(`f32-b${c}`).value);
+  reloadBands('u8');
 }
 
 function reloadBands(which) {
@@ -1148,7 +1151,28 @@ async function loadTile(tileId, cogUrl, customScaleUrl=null) {
 // ═══════════════════════════════════════════════════════════
 // PIXEL INSPECTOR
 // ═══════════════════════════════════════════════════════════
+// Click outside the loaded tile: offer the demo tile(s) under the click (S2 tiles overlap at the edges)
+function gridLoadPopup(latlng) {
+  if (!F.grid || !F.map.hasLayer(F.grid)) return false;
+  const {lat,lng}=latlng;
+  const under=(F.stacRaw||[]).filter(i=>i._bbox&&i.id!==F.tileId&&lng>=i._bbox[0]&&lng<=i._bbox[2]&&lat>=i._bbox[1]&&lat<=i._bbox[3]);
+  if (!under.length) return false;
+  L.popup({maxWidth:260}).setLatLng(latlng).setContent(
+    under.map(i=>`<button class="bxs" style="display:block;width:100%;margin:3px 0"
+      onclick="F.map.closePopup();selectSTACItem('${esc(i.id)}','${esc(i.assets.map.href)}','${esc(i._scaleUrl)}')">Load ${esc(i.id)}</button>`).join('')
+  ).openOn(F.map);
+  return true;
+}
+
+function insideLoadedTile(latlng) {
+  if (!F.u8?.tiff) return false;
+  const {x,y}=fromWGS84(F.u8.projDef,latlng.lat,latlng.lng);
+  const c=(x-F.u8.origin[0])/F.u8.res[0], r=(y-F.u8.origin[1])/F.u8.res[1];
+  return c>=0&&r>=0&&c<F.u8.fullW&&r<F.u8.fullH;
+}
+
 async function onMapClick(e) {
+  if (!insideLoadedTile(e.latlng) && gridLoadPopup(e.latlng)) return;
   if (!F.u8?.tiff) return;
   const {lat,lng}=e.latlng;
   const {projDef,origin:[ox,oy],res:[rx,ry],fullW,fullH}=F.u8;
@@ -1328,8 +1352,13 @@ async function fetchSTAC() {
     const res=await fetch(`${CFG.DEMO_BASE}/tiles.json?_=${Date.now()}`);
     if (!res.ok) throw new Error(`tiles.json: HTTP ${res.status}`);
     const data=await res.json();
-    F.stacRaw=(data.tiles||[]).map(t=>({id:t.s2_tile,_label:`${t.s2_tile} · ${t.start_date} → ${t.end_date}`,
+    F.stacRaw=(data.tiles||[]).map(t=>({id:t.s2_tile,_label:`${t.s2_tile} · ${t.start_date} → ${t.end_date}`,_bbox:t.bbox,
       assets:{map:{href:`${CFG.DEMO_BASE}/${t.embeddings}`}},_scaleUrl:`${CFG.DEMO_BASE}/${t.scale}`,_extra:true}));
+    F.grid.clearLayers();
+    F.stacRaw.forEach(i=>L.rectangle([[i._bbox[1],i._bbox[0]],[i._bbox[3],i._bbox[2]]],
+      {color:'#4a8fd5',weight:1.2,opacity:0.7,fill:false})
+      .bindTooltip(`${i.id} · click inside to load`,{sticky:true,direction:'top'}).addTo(F.grid));
+    if (!F.u8) F.map.fitBounds(L.latLngBounds(F.stacRaw.flatMap(i=>[[i._bbox[1],i._bbox[0]],[i._bbox[3],i._bbox[2]]])));
     // Append extra (non-STAC) tiles as synthetic items
     (CFG.EXTRA_TILES||[]).forEach(t=>{
       if (!F.stacRaw.find(i=>i.id===t.id)) {
