@@ -493,6 +493,8 @@ input.sp-colorpick { width: 28px; height: 22px; border: none; border-radius: 3px
           </label>
         </div>
         <div id="s2-status" style="font-size:10px;color:#4a5570;">Loading tile grid…</div>
+        <select id="region-jump" class="typesel" style="width:100%;margin-top:6px;display:none"
+          onchange="jumpToRegion(this.value)"></select>
       </div>
 
       <div class="sec">
@@ -1852,6 +1854,31 @@ function mosaicLegendHTML(l) {
 }
 
 // Start-up: PCA mosaic + S2 outlines + product menu + tile list, all from tiles.json
+// Regions come from tiles.json ("region" per tile): the Belgium block plus single showcase tiles
+const CORE_REGION = 'Belgium & surroundings';
+function regionBounds(name) {
+  const ts = (S.catalog?.tiles || []).filter(t => (t.region || CORE_REGION) === name);
+  if (!ts.length) return null;
+  return L.latLngBounds(ts.flatMap(t => [[t.bbox[1], t.bbox[0]], [t.bbox[3], t.bbox[2]]]));
+}
+function jumpToRegion(name) {
+  if (!name) return;
+  const b = name === '__all__'
+    ? L.latLngBounds((S.catalog?.tiles || []).flatMap(t => [[t.bbox[1], t.bbox[0]], [t.bbox[3], t.bbox[2]]]))
+    : regionBounds(name);
+  if (b && b.isValid()) S.map.fitBounds(b, { padding: [20, 20] });
+  const sel = document.getElementById('region-jump'); if (sel) sel.value = '';
+}
+function renderRegionJump(cat) {
+  const names = [...new Set(cat.tiles.map(t => t.region || CORE_REGION))];
+  const sel = document.getElementById('region-jump');
+  if (names.length < 2) { sel.style.display = 'none'; return; }
+  names.sort((a, b) => (a === CORE_REGION ? -1 : b === CORE_REGION ? 1 : a.localeCompare(b)));
+  sel.innerHTML = '<option value="">Go to region…</option><option value="__all__">All demo tiles</option>' +
+    names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  sel.style.display = '';
+}
+
 async function initDemo() {
   const statusEl = document.getElementById('prod-status');
   let cat;
@@ -1859,6 +1886,7 @@ async function initDemo() {
   catch(e) { statusEl.textContent = `Could not load the demo catalog (${e.message})`; statusEl.style.color = '#c0392b'; return; }
   const n = cat.tiles.length;
   statusEl.textContent = `${n} S2 tiles · postprocessed products, aligned pixel-for-pixel with the embeddings`;
+  renderRegionJump(cat);
   S.productDefs = buildProductDefs(cat);
   renderProdCatalog();
   fetchSTAC();
@@ -1884,6 +1912,8 @@ async function initDemo() {
     } else {
       pca.autoZoom = true;      // no OIF in this pack: fall back to the PCA as the start layer
     }
+    oif && (oif.autoZoom = false); pca.autoZoom = false;   // start on the core region, not on all tiles
+    jumpToRegion(CORE_REGION);
     renderLists();
     if (oif) { await loadCOG(oif.id); loadCOG(pca.id); }
     else await loadCOG(pca.id);
