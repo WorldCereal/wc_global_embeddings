@@ -1865,10 +1865,9 @@ async function initDemo() {
   const pcaParts = cat.tiles.filter(t => t.pca).map(t => ({ s2: t.s2_tile, url: demoUrl(t.pca), bbox: t.bbox }));
   if (pcaParts.length) {
     const pca = mkMosaic('Embeddings PCA (one model for all tiles)', pcaParts, { kind: 'rgb' });
-    pca.autoZoom = true;
     S.layers.push(pca);
-    // OIF RGB: the 3 real embedding bands that best separate land cover (tools/build_oif.py);
-    // listed above the PCA and switched off at start: tick it to compare.
+    // OIF RGB: the 3 real embedding bands that best separate land cover (tools/build_oif.py).
+    // Shown at start, listed above the PCA; the PCA stays loaded but switched off (tick it to compare).
     const oifParts = cat.tiles.filter(t => t.oif).map(t => ({ s2: t.s2_tile, url: demoUrl(t.oif), bbox: t.bbox }));
     let oif = null;
     if (oifParts.length) {
@@ -1877,12 +1876,15 @@ async function initDemo() {
       const nm = bands.length === 3 ? ` (bands ${bands.join(' / ')})` : '';
       oif = mkMosaic(`Embeddings OIF RGB${nm}`, oifParts,
                      { kind: 'rgb', tag: 'OIF', chan: bands.length === 3 ? bands.map(b => `A${b}`) : ['R','G','B'] });
-      oif.visible = false;
+      oif.autoZoom = true;
       S.layers.unshift(oif);
+      pca.visible = false;
+    } else {
+      pca.autoZoom = true;      // no OIF in this pack: fall back to the PCA as the start layer
     }
     renderLists();
-    await loadCOG(pca.id);
-    if (oif) loadCOG(oif.id);
+    if (oif) { await loadCOG(oif.id); loadCOG(pca.id); }
+    else await loadCOG(pca.id);
   } else if (cat.tiles.length) {
     S.map.fitBounds(L.latLngBounds(cat.tiles.map(t => [[t.bbox[1], t.bbox[0]], [t.bbox[3], t.bbox[2]]]).flat()));
   }

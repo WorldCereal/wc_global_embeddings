@@ -480,6 +480,43 @@ input.cls-colorpick { width:26px; height:26px; border:none; border-radius:3px; c
       <!-- ── STEP 3 ──────────────────────────────────────── -->
       <div class="step-label">Step 3 · Classify Viewport</div>
 
+      <!-- ── Unsupervised subpanel ──────────────────────── -->
+      <div class="subpanel">
+        <div class="subpanel-hd">🔀 Unsupervised (K-means)</div>
+        <div class="clf-tile-row">
+          <label>Tile:</label>
+          <select class="clf-tile-sel" id="clf-tile-sel-unspv"
+            onchange="CLF.lastTileIdUnspv=parseInt(this.value)||null;updateSamplingUI()">
+            <option value="">Select a tile</option>
+          </select>
+        </div>
+        <div class="clf-tile-row" style="align-items:center;">
+          <label>K clusters:</label>
+          <input type="number" id="kmeans-k" min="2" max="20" value="3" class="binp" style="width:55px;flex-shrink:0;">
+          <span style="font-size:10px;color:#4a5570;flex:1;margin-left:4px;">auto-set from classes</span>
+        </div>
+        <div class="clf-opacity-row">
+          <label>Opacity</label>
+          <input type="range" min="0" max="1" step="0.05" value="0.75" id="clf-opacity-unspv"
+            oninput="setClfOpacity('unspv',this.value);this.nextElementSibling.textContent=Math.round(this.value*100)+'%'">
+          <span>75%</span>
+        </div>
+        <div class="clf-status" id="clf-status-unspv">Select tile and run K-means</div>
+        <button class="btn-run btn-cluster" id="btn-cluster" onclick="runClustering()" disabled>
+          🔀 Run K-means
+        </button>
+        <div class="export-row">
+          <select id="export-fmt-unspv">
+            <option value="png">📷 Cluster PNG + Legend</option>
+            <option value="geotiff">🗺 GeoTIFF (cluster index)</option>
+            <option value="embed">🌐 Embedding PNG</option>
+            <option value="legend">🏷 Legend only</option>
+          </select>
+          <button class="btn-run btn-export" id="btn-export-unspv" onclick="doExport('unspv')" disabled>↓ Export</button>
+        </div>
+        <div class="export-res-note" id="export-note-unspv"></div>
+      </div>
+
       <!-- ── Supervised subpanel ──────────────────────── -->
       <div class="subpanel">
         <div class="subpanel-hd">🔬 Supervised</div>
@@ -518,43 +555,6 @@ input.cls-colorpick { width:26px; height:26px; border:none; border-radius:3px; c
           <button class="btn-run btn-export" id="btn-export-spv" onclick="doExport('spv')" disabled>↓ Export</button>
         </div>
         <div class="export-res-note" id="export-note-spv"></div>
-      </div>
-
-      <!-- ── Unsupervised subpanel ──────────────────────── -->
-      <div class="subpanel">
-        <div class="subpanel-hd">🔀 Unsupervised (K-means)</div>
-        <div class="clf-tile-row">
-          <label>Tile:</label>
-          <select class="clf-tile-sel" id="clf-tile-sel-unspv"
-            onchange="CLF.lastTileIdUnspv=parseInt(this.value)||null;updateSamplingUI()">
-            <option value="">Select a tile</option>
-          </select>
-        </div>
-        <div class="clf-tile-row" style="align-items:center;">
-          <label>K clusters:</label>
-          <input type="number" id="kmeans-k" min="2" max="20" value="3" class="binp" style="width:55px;flex-shrink:0;">
-          <span style="font-size:10px;color:#4a5570;flex:1;margin-left:4px;">auto-set from classes</span>
-        </div>
-        <div class="clf-opacity-row">
-          <label>Opacity</label>
-          <input type="range" min="0" max="1" step="0.05" value="0.75" id="clf-opacity-unspv"
-            oninput="setClfOpacity('unspv',this.value);this.nextElementSibling.textContent=Math.round(this.value*100)+'%'">
-          <span>75%</span>
-        </div>
-        <div class="clf-status" id="clf-status-unspv">Select tile and run K-means</div>
-        <button class="btn-run btn-cluster" id="btn-cluster" onclick="runClustering()" disabled>
-          🔀 Run K-means
-        </button>
-        <div class="export-row">
-          <select id="export-fmt-unspv">
-            <option value="png">📷 Cluster PNG + Legend</option>
-            <option value="geotiff">🗺 GeoTIFF (cluster index)</option>
-            <option value="embed">🌐 Embedding PNG</option>
-            <option value="legend">🏷 Legend only</option>
-          </select>
-          <button class="btn-run btn-export" id="btn-export-unspv" onclick="doExport('unspv')" disabled>↓ Export</button>
-        </div>
-        <div class="export-res-note" id="export-note-unspv"></div>
       </div>
 
     </div><!-- /sb-scroll -->
@@ -3035,8 +3035,8 @@ After sampling, the <b>Visualize Points PCA</b> button activates. Click it to se
     title: 'Step 3: Classify Viewport',
     target: '#btn-classify',
     desc: `Classify every pixel visible in the current map view.<br><br>
-<b>Supervised (left subpanel)</b>: uses your class centroids. Choose a tile and algorithm (Cosine, Euclidean, or Gaussian), then click <b>Run Classifier</b>.<br><br>
-<b>Unsupervised (right subpanel)</b>: K-means clustering with no labels. Set the number of clusters K and click <b>Run K-means</b>.<br><br>
+<b>Unsupervised (top)</b>: K-means clustering with no labels. Set the number of clusters K and click <b>Run K-means</b>.<br><br>
+<b>Supervised (below it)</b>: uses your class centroids. Choose a tile and algorithm (Cosine, Euclidean, or Gaussian), then click <b>Run Classifier</b>.<br><br>
 Export results as PNG + Legend, GeoTIFF (QGIS-ready with ColorMap), or Embedding PNG.`,
   },
   {
