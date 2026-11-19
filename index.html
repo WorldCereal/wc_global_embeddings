@@ -452,8 +452,7 @@ input.sp-colorpick { width: 28px; height: 22px; border: none; border-radius: 3px
   <a href="https://worldcereal.github.io" target="_blank" class="wc-logo-link" title="WorldCereal Project">
     <img src="worldcereal_logo.jpg" alt="WorldCereal" class="wc-logo" onerror="this.style.display='none'">
   </a>
-  <h1>🛰 WorldCereal Embeddings Explorer · Europe demo</h1>
-  <span class="sub">Multi-layer • Viewport-adaptive • 1–99% stretch</span>
+  <h1>WorldCereal Embeddings Explorer</h1>
   <nav class="hdr-nav">
     <span class="nav-pill active">🗺 Viewer</span>
     <a href="float.html" class="nav-pill" target="_blank">⚡ Float32</a>
@@ -489,7 +488,7 @@ input.sp-colorpick { width: 28px; height: 22px; border: none; border-radius: 3px
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
           <span class="s2-heading">🗺 S2 Tile Grid</span>
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:#8892aa;">
-            <input type="checkbox" id="s2-tiles-toggle" checked onchange="toggleS2TilesLayer(this.checked)" style="margin:0;">
+            <input type="checkbox" id="s2-tiles-toggle" onchange="toggleS2TilesLayer(this.checked)" style="margin:0;">
             Show
           </label>
         </div>
@@ -1234,6 +1233,7 @@ function removeLayer(id) {
   clearTimeout(S.refreshTimers[id]);
   S.layers = S.layers.filter(x => x.id !== id);
   renderLists(); renderSTAC();
+  if (l?.productId) renderProdCatalog();   // re-enable its "+ Add" button
 }
 
 function toggleVis(id) {
@@ -1299,7 +1299,7 @@ function handleErr(id, err) {
   let msg = (err?.message || String(err)).slice(0, 150);
   const cors = /fetch|CORS|network|NetworkError|blocked/i.test(msg);
   const layer = getLayer(id);
-  const knownBucket = layer && NO_CORS_BUCKETS.some(b => layer.url.includes(b));
+  const knownBucket = layer && NO_CORS_BUCKETS.some(b => (layer.url || "").includes(b));   // mosaics have no single url
   if (cors) {
     document.getElementById('cwarn').style.display = 'block';
     const detailEl = document.getElementById('cwarn-detail');
@@ -1871,11 +1871,13 @@ async function initDemo() {
     const oifParts = cat.tiles.filter(t => t.oif).map(t => ({ s2: t.s2_tile, url: demoUrl(t.oif), bbox: t.bbox }));
     let oif = null;
     if (oifParts.length) {
-      let bands = [];
-      try { bands = (await (await fetch(demoUrl('oif_model.json'))).json()).bands_1based || []; } catch(e) {}
+      let bands = [], fixed = false;
+      try { const m = await (await fetch(demoUrl('oif_model.json'))).json(); bands = m.bands_1based || []; fixed = !!m.fixed_bands; }
+      catch(e) {}
       const nm = bands.length === 3 ? ` (bands ${bands.join(' / ')})` : '';
-      oif = mkMosaic(`Embeddings OIF RGB${nm}`, oifParts,
-                     { kind: 'rgb', tag: 'OIF', chan: bands.length === 3 ? bands.map(b => `A${b}`) : ['R','G','B'] });
+      // fixed_bands: hand-picked bands with the shared stretch; otherwise the OIF choice
+      oif = mkMosaic(`Embeddings ${fixed ? 'RGB' : 'OIF RGB'}${nm}`, oifParts,
+                     { kind: 'rgb', tag: fixed ? 'RGB' : 'OIF', chan: bands.length === 3 ? bands.map(b => `A${b}`) : ['R','G','B'] });
       oif.autoZoom = true;
       S.layers.unshift(oif);
       pca.visible = false;
@@ -2885,7 +2887,7 @@ async function loadS2TilesFromCatalog() {
         { color:'#4a8fd5', weight:1.2, opacity:0.7, fill:false, interactive:true });
       r.bindTooltip(`${t.s2_tile} · ${t.start_date} → ${t.end_date} · click inside to load`, { sticky:true, direction:'top', className:'s2-tile-label', opacity:0.95 });
       return r;
-    })).addTo(S.map);
+    }));   // off at start: tick "Show" to draw it
     statusEl.textContent = `${cat.tiles.length} demo tiles`;
     statusEl.style.color = '#4a6';
   } catch(e) {

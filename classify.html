@@ -419,8 +419,7 @@ input.cls-colorpick { width:26px; height:26px; border:none; border-radius:3px; c
   <a href="https://worldcereal.github.io" target="_blank" class="wc-logo-link" title="WorldCereal Project">
     <img src="worldcereal_logo.jpg" alt="WorldCereal" class="wc-logo" onerror="this.style.display='none'">
   </a>
-  <h1>🔬 Classify Embeddings</h1>
-  <span class="sub">Point sampling • Cosine similarity classifier • Viewport-adaptive</span>
+  <h1>Classify Embeddings</h1>
   <nav class="hdr-nav">
     <a href="index.html" class="nav-pill">🗺 Viewer</a>
     <a href="float.html" class="nav-pill">⚡ Float32</a>
@@ -448,7 +447,7 @@ input.cls-colorpick { width:26px; height:26px; border:none; border-radius:3px; c
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
           <span class="s2-heading">🗺 S2 Tile Grid</span>
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:#8892aa;">
-            <input type="checkbox" id="s2-tiles-toggle" checked onchange="toggleS2TilesLayer(this.checked)" style="margin:0;">
+            <input type="checkbox" id="s2-tiles-toggle" onchange="toggleS2TilesLayer(this.checked)" style="margin:0;">
             Show
           </label>
         </div>
@@ -482,12 +481,20 @@ input.cls-colorpick { width:26px; height:26px; border:none; border-radius:3px; c
 
       <!-- ── Unsupervised subpanel ──────────────────────── -->
       <div class="subpanel">
-        <div class="subpanel-hd">🔀 Unsupervised (K-means)</div>
+        <div class="subpanel-hd">🔀 Unsupervised (K-means / e-means)</div>
         <div class="clf-tile-row">
           <label>Tile:</label>
           <select class="clf-tile-sel" id="clf-tile-sel-unspv"
             onchange="CLF.lastTileIdUnspv=parseInt(this.value)||null;updateSamplingUI()">
             <option value="">Select a tile</option>
+          </select>
+        </div>
+        <div class="clf-tile-row">
+          <label>Method:</label>
+          <select class="clf-tile-sel" id="clu-algo"
+            onchange="document.getElementById('btn-cluster').innerHTML=this.value==='emeans'?'🔀 Run e-means':'🔀 Run K-means'">
+            <option value="kmeans">K-means (Lloyd, up to 25 passes)</option>
+            <option value="emeans">e-means (mini-batch EMA, 5 epochs)</option>
           </select>
         </div>
         <div class="clf-tile-row" style="align-items:center;">
@@ -1408,7 +1415,7 @@ function updateClassColor(classId, newColor) {
 // ═══════════════════════════════════════════════════════════
 // Click outside the loaded tiles (grid shown): offer the demo tile(s) under the click
 function gridLoadPopup(latlng) {
-  if (!S2.visible || !S2.layer) return false;
+  if (!S2.tiles.length) return false;   // works with the grid hidden too
   const {lat,lng}=latlng, inBox=(t)=>lng>=t.bbox[0]&&lng<=t.bbox[2]&&lat>=t.bbox[1]&&lat<=t.bbox[3];
   const loaded=new Set(S.layers.map(l=>l.stacId));
   if (S2.tiles.some(t=>loaded.has(t.s2_tile)&&inBox(t))) return false;   // on a loaded tile: normal click
@@ -1920,6 +1927,64 @@ async function _doClassification(layer) {
 // K-MEANS UNSUPERVISED CLUSTERING
 // Uses class count as K; seeds from supervised centroids if available
 // ═══════════════════════════════════════════════════════════
+// e-means (Kirchhof et al., arXiv 2611.09501): mini-batch k-means whose centroids are EMAs of
+// batch counts/sums with a cosine-annealed step, dead-cluster revival every 5 batches, and a final
+// centroid = mean of the points assigned during the last epoch. Batch size and peak step come from
+// the paper's scaling laws (Eqs. 6-7). Same objective as K-means; centroids are updated in place.
+function _eMeans(rasters, validIdx, centroids, K, nDims, assign, nearest) {
+  const n = validIdx.length, T = 5, EPS = 0.1, TAU = 0.1;
+  let B = 0.035 * Math.pow(K, 0.13) * Math.pow(n, 0.88) * Math.pow(T, 0.81);
+  if (n > 2e6) B /= 8;
+  B = Math.max(64, Math.min(n, Math.pow(2, Math.round(Math.log2(B)))));
+  const a0 = Math.min(0.824 * Math.pow(K, -0.46) * Math.pow(B, 0.90) * Math.pow(n, -0.45) * Math.pow(T, -0.11), 1);
+  const nb = Math.max(1, Math.floor(n / B)), M = T * nb;
+  const N = new Float64Array(K).fill(1e-10);
+  const S = centroids.map(c => Float64Array.from(c, v => v * 1e-10));
+  const order = Int32Array.from(validIdx);
+  const bn = new Float64Array(K), bs = Array.from({length: K}, () => new Float64Array(nDims));
+  const sync = k => { for (let b=0;b<nDims;b++) centroids[k][b] = S[k][b] / N[k]; };
+  let t = 0;
+  for (let ep = 0; ep < T; ep++) {
+    for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); const x=order[i]; order[i]=order[j]; order[j]=x; }
+    const last = ep === T - 1;
+    for (let bi = 0; bi < nb; bi++) {
+      t++;
+      const alpha = a0 * (EPS + (1 - EPS) * 0.5 * (1 + Math.cos(Math.PI * t / M))), gamma = 1 - alpha;
+      bn.fill(0); bs.forEach(v => v.fill(0));
+      const end = bi === nb - 1 ? order.length : (bi + 1) * B;   // last batch takes the remainder
+      for (let p = bi * B; p < end; p++) {
+        const idx = order[p], k = nearest(idx);
+        if (last) assign[idx] = k;
+        bn[k]++; const sk = bs[k];
+        for (let b=0;b<nDims;b++) sk[b] += rasters[b][idx];
+      }
+      for (let k=0;k<K;k++) {
+        N[k] = gamma * N[k] + alpha * bn[k];
+        const Sk = S[k], sk = bs[k];
+        for (let b=0;b<nDims;b++) Sk[b] = gamma * Sk[b] + alpha * sk[b];
+        sync(k);
+      }
+      if (t % 5 === 0) {   // revive dead clusters by splitting the heaviest one (Faiss-style)
+        const mean = N.reduce((a, v) => a + v, 0) / K;
+        for (let k=0;k<K;k++) {
+          if (N[k] >= TAU * mean) continue;
+          let d = 0; for (let j=1;j<K;j++) if (N[j] > N[d]) d = j;
+          if (d === k) continue;
+          N[d] /= 2; for (let b=0;b<nDims;b++) S[d][b] /= 2;
+          N[k] = N[d];
+          for (let b=0;b<nDims;b++) { S[k][b] = S[d][b] * (1 + 1e-3 * (Math.random() - 0.5)); }
+          sync(d); sync(k);
+        }
+      }
+    }
+  }
+  // finalisation: centroid = mean of its last-epoch points (never increases the training MSE)
+  const sums = Array.from({length: K}, () => new Float64Array(nDims)), cnt = new Int32Array(K);
+  for (const idx of validIdx) { const k = assign[idx]; if (k < 0) continue; cnt[k]++; for (let b=0;b<nDims;b++) sums[k][b] += rasters[b][idx]; }
+  for (let k=0;k<K;k++) if (cnt[k] > 0) for (let b=0;b<nDims;b++) centroids[k][b] = sums[k][b] / cnt[k];
+  return T;
+}
+
 async function runClustering() {
   if (CLF.running) return;
   const layerId = parseInt(document.getElementById('clf-tile-sel-unspv').value);
@@ -2010,9 +2075,6 @@ async function _doKmeans(layer) {
   const K = Math.min(20, Math.max(2, isNaN(kInput) ? (CLS.classes.length||3) : kInput));
   const nDims = numBands;
 
-  document.getElementById('clf-status-unspv').textContent=`Running K-means (K=${K})…`;
-  await new Promise(r=>setTimeout(r,10));
-
   // Initialise centroids: use supervised centroids if available, else random pixels
   const centroids = [];
   if (CLF.centroids && CLF.centroids.size >= K) {
@@ -2044,34 +2106,55 @@ async function _doKmeans(layer) {
     }
   }
 
-  // K-means EM iterations
+  const algo = document.getElementById('clu-algo')?.value || 'kmeans';
+  const algoName = algo === 'emeans' ? 'e-means' : 'K-means';
+  document.getElementById('clf-status-unspv').textContent=`Running ${algoName} (K=${K})…`;
+  await new Promise(r=>setTimeout(r,10));
+  const t0 = performance.now();
   const assign = new Int32Array(nPx).fill(-1);
-  for (let iter=0; iter<25; iter++) {
-    // Assignment step
-    let changed=0;
-    for (const idx of validIdx) {
-      let minD=Infinity, best=0;
-      for (let k=0;k<K;k++) {
-        let d=0;
-        for(let b=0;b<nDims;b++){const dv=rasters[b][idx]-centroids[k][b]; d+=dv*dv;}
-        if(d<minD){minD=d;best=k;}
-      }
-      if(assign[idx]!==best){assign[idx]=best;changed++;}
-    }
-    if(changed===0&&iter>0) break;
-
-    // Update step — recompute centroids
-    const sums=Array.from({length:K},()=>new Float64Array(nDims));
-    const counts=new Int32Array(K);
-    for (const idx of validIdx) {
-      const k=assign[idx]; if(k<0) continue;
-      for(let b=0;b<nDims;b++) sums[k][b]+=rasters[b][idx];
-      counts[k]++;
-    }
+  const nearest = idx => {
+    let minD=Infinity, best=0;
     for (let k=0;k<K;k++) {
-      if(counts[k]>0) for(let b=0;b<nDims;b++) centroids[k][b]=sums[k][b]/counts[k];
+      const c=centroids[k]; let d=0;
+      for(let b=0;b<nDims;b++){const dv=rasters[b][idx]-c[b]; d+=dv*dv;}
+      if(d<minD){minD=d;best=k;}
+    }
+    return best;
+  };
+  let passes = 0;
+  if (algo === 'emeans') passes = _eMeans(rasters, validIdx, centroids, K, nDims, assign, nearest);
+  else {
+    // K-means (Lloyd) EM iterations
+    for (let iter=0; iter<25; iter++) {
+      passes++;
+      let changed=0;
+      for (const idx of validIdx) {
+        const best=nearest(idx);
+        if(assign[idx]!==best){assign[idx]=best;changed++;}
+      }
+      if(changed===0&&iter>0) break;
+      const sums=Array.from({length:K},()=>new Float64Array(nDims));
+      const counts=new Int32Array(K);
+      for (const idx of validIdx) {
+        const k=assign[idx]; if(k<0) continue;
+        for(let b=0;b<nDims;b++) sums[k][b]+=rasters[b][idx];
+        counts[k]++;
+      }
+      for (let k=0;k<K;k++) {
+        if(counts[k]>0) for(let b=0;b<nDims;b++) centroids[k][b]=sums[k][b]/counts[k];
+      }
     }
   }
+  const secs = (performance.now() - t0) / 1000;
+  // final assignment + mean squared error, the same way for both methods
+  let sse = 0;
+  for (const idx of validIdx) {
+    const k = nearest(idx); assign[idx] = k;
+    const c = centroids[k];
+    for(let b=0;b<nDims;b++){const dv=rasters[b][idx]-c[b]; sse+=dv*dv;}
+  }
+  const mse = sse / validIdx.length;
+  CLF.lastCluStats = { algo: algoName, passes, secs, mse, n: validIdx.length };
 
   // Build one unique color per cluster (K colors total).
   // Use user-defined class colors for the first N clusters, then fall back to CLASS_PALETTE.
@@ -2132,7 +2215,9 @@ async function _doKmeans(layer) {
     CLF.overlayCluster=L.imageOverlay(url,bounds,{pane:'clf-overlay',opacity:CLF.opacityUnspv,interactive:false}).addTo(S.map);
   }
   const clsStr=kCents.map(c=>`<span style="color:${hexStr(c.r,c.g,c.b)}">${c.name}</span>`).join(' · ');
-  document.getElementById('clf-status-unspv').innerHTML=`✓ K-means K=${K} · ${clsStr}`;
+  const st = CLF.lastCluStats || {};
+  document.getElementById('clf-status-unspv').innerHTML=`✓ ${st.algo||'K-means'} K=${K} · ${clsStr}` +
+    (st.secs !== undefined ? `<div style="font-size:10px;color:#6a7a96;margin-top:2px">${st.passes} ${st.algo==='e-means'?'epochs':'passes'} · ${st.secs.toFixed(2)} s · MSE ${st.mse.toFixed(1)} · ${st.n.toLocaleString()} px</div>` : '');
 }
 
 // Auto-reclassify silently on zoom/pan
@@ -2850,7 +2935,7 @@ function initRightPanelResize() {
 // ═══════════════════════════════════════════════════════════
 // S2 TILE GRID (GeoJSON)
 // ═══════════════════════════════════════════════════════════
-const S2 = { layer: null, visible: true, tiles: [] };
+const S2 = { layer: null, visible: false, tiles: [] };
 
 async function loadS2TilesGeoJSON() {
   const statusEl = document.getElementById('s2-status');
@@ -2876,7 +2961,8 @@ async function loadS2TilesGeoJSON() {
           opacity: 0.95,
         });
       },
-    }).addTo(S.map);
+    });
+    if (S2.visible) S2.layer.addTo(S.map);
 
     const n = geojson.features?.length || 0;
     statusEl.textContent = `${n} demo tiles · click inside one to load it`;

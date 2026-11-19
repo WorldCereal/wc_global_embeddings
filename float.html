@@ -231,7 +231,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   </a>
   <div>
     <h1>Float32 Explorer</h1>
-    <div class="sub">WorldCereal Embeddings · Dequantization &amp; Inspection</div>
   </div>
   <div class="hdr-nav">
     <a class="nav-pill" href="index.html">COG Viewer</a>
@@ -751,7 +750,7 @@ function initMap() {
     'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     {attribution:'© Esri',maxZoom:16}).addTo(F.map);
   // S2 tile grid of the demo tiles (filled by fetchSTAC); click inside a tile to load it
-  F.grid = L.layerGroup().addTo(F.map);
+  F.grid = L.layerGroup();   // off at start (layer control: 'S2 tile grid')
   L.control.layers(
     {'Esri Satellite':esri,'Esri Light Gray':carto,'Esri Dark Gray':cartoDark},{'S2 tile grid':F.grid},{position:'topright'}
   ).addTo(F.map);
@@ -1153,7 +1152,7 @@ async function loadTile(tileId, cogUrl, customScaleUrl=null) {
 // ═══════════════════════════════════════════════════════════
 // Click outside the loaded tile: offer the demo tile(s) under the click (S2 tiles overlap at the edges)
 function gridLoadPopup(latlng) {
-  if (!F.grid || !F.map.hasLayer(F.grid)) return false;
+  if (!F.grid) return false;   // works with the grid hidden too
   const {lat,lng}=latlng;
   const under=(F.stacRaw||[]).filter(i=>i._bbox&&i.id!==F.tileId&&lng>=i._bbox[0]&&lng<=i._bbox[2]&&lat>=i._bbox[1]&&lat<=i._bbox[3]);
   if (!under.length) return false;
